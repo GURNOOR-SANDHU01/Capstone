@@ -117,17 +117,7 @@ Since you need degraded/clean pairs:
 - Damage classification (xBD has 4-class labels: no damage, minor, major, destroyed)
 - Build priority scoring algorithm
 
-### Phase 4: Integration & Deployment (2-3 weeks)
-
-- End-to-end pipeline
-- Web interface for emergency responders
-- Visualization dashboard with:
-    - Before/after enhancement comparison
-    - Priority heatmaps
-    - Detected features overlay
-    - Exportable reports
-
-## Technical Stack Recommendations
+## Tech Stack
 
 ```python
 # Core Libraries
