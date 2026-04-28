@@ -1,7 +1,12 @@
-.env
-venv/
-
-research/*
-!research/
+__pycache__/
+.venv/
+.agents/
+.ruff_cache/
 
 reports/*
+!research/
+research/*
+
+.env
+helper.txt
+rough.py
