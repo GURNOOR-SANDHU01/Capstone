@@ -7,5 +7,4 @@ __pycache__/
 personal/*
 
 .env
-rough.py
 AGENTS.md
