@@ -17,10 +17,20 @@ class RAGSettings(BaseSettings):
 class AppSettings(BaseSettings):
     """General FastAPI and Service settings."""
     app_name: str = Field(..., validation_alias='APP_NAME')
+    app_version: str = Field(..., validation_alias='APP_VERSION')
     debug: bool = False
     
     # External Service URLs
     auth_service_url: Optional[AnyHttpUrl] = None
+
+class DatabaseSettings(BaseSettings):
+    db_url: str = Field(..., validation_alias='DATABASE_URL')
+    db_name: str = Field(..., validation_alias='DATABASE_NAME')
+    db_pass: str = Field(..., validation_alias='DATABASE_PASSWORD')
+
+class NLPEngine(BaseSettings):
+    nlp_engine_name: str = Field(..., validation_alias='NLP_ENGINE_NAME')
+    models: List[Dict[str, str]] = [{"lang_code": "en", "model_name": "en_core_web_lg"}]
 
 class Settings(BaseSettings):
     """Master Settings Object."""
@@ -33,6 +43,9 @@ class Settings(BaseSettings):
     app: AppSettings = AppSettings()
     llm: LLMSettings = LLMSettings()
     rag: RAGSettings = RAGSettings()
+    db: DatabaseSettings = DatabaseSettings()
+    nlp: NLPEngine = NLPEngine()
+
 
 
 settings = Settings()

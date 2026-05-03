@@ -4,9 +4,11 @@ __pycache__/
 .ruff_cache/
 
 reports/*
-!research/
-research/*
+!personal/
+personal/*
 
 .env
 helper.txt
 rough.py
+AGENTS.md
+

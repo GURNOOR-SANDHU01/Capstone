@@ -1,0 +1,4 @@
+audio dataset
+https://www.kaggle.com/datasets/uldisvalainis/audio-emotions
+https://www.kaggle.com/datasets/uwrfkaggler/ravdess-emotional-speech-audio
+https://www.kaggle.com/datasets/debarshichanda/goemotions
