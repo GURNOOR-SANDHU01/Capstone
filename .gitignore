@@ -3,11 +3,9 @@ __pycache__/
 .agents/
 .ruff_cache/
 
-
 !personal/
 personal/*
 
 .env
 rough.py
 AGENTS.md
-
