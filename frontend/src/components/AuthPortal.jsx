@@ -1,40 +1,51 @@
 import { useState } from "react";
-import { loginUser, signUpPatient, loginWithGoogle, isRealFirebaseConfigured, setForceSandbox } from "../services/firebase";
+import { 
+  Leaf, 
+  Stethoscope, 
+  ShieldCheck, 
+  Mail, 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  Loader2, 
+  AlertCircle,
+  Building2
+} from "lucide-react";
+
+import { 
+  loginUser, 
+  signUpPatient, 
+  loginWithGoogle, 
+  isRealFirebaseConfigured, 
+  setForceSandbox 
+} from "../services/firebase";
 
 export default function AuthPortal({ onAuthSuccess, onNotification }) {
-  const [authView, setAuthView] = useState("patient-login"); // patient-login, clinician-login, patient-register
-  const [registerStep, setRegisterStep] = useState(1); // 1 to 4
+  const [authView, setAuthView] = useState("patient-login"); // patient-login, doctor-login, admin-login, patient-register
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   // Login credentials
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
+  const [loginEmail, setLoginEmail] = useState("demo@example.com");
+  const [loginPassword, setLoginPassword] = useState("password123");
 
-  // Patient Registration Details
+  // Registration credentials
+  const [regName, setRegName] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
-  const [regName, setRegName] = useState("");
   const [regMobile, setRegMobile] = useState("");
-  
-  // Emergency Contacts
-  const [emergencyContact1, setEmergencyContact1] = useState({ name: "", phone: "" });
-  const [emergencyContact2, setEmergencyContact2] = useState({ name: "", phone: "" });
-  const [emergencyEmail, setEmergencyEmail] = useState("");
 
-  // Medical History
-  const [hasMedicalIssue, setHasMedicalIssue] = useState(false);
-  const [medicalIssueText, setMedicalIssueText] = useState("");
-  const [isUnderTreatment, setIsUnderTreatment] = useState(false);
-  const [treatmentText, setTreatmentText] = useState("");
+  const activeRole = authView === "doctor-login" ? "doctor" : authView === "admin-login" ? "admin" : "patient";
+  const isRegister = authView === "patient-register";
 
-  // Google Login handling
-  const handleGoogleLogin = async (role) => {
+  // Google Sign-in
+  const handleGoogleLogin = async () => {
     setIsLoading(true);
     setErrorMsg("");
     try {
-      const user = await loginWithGoogle(role);
-      onNotification("🔑 Google Sign-in Success", `Signed in securely as ${user.email}`);
+      const user = await loginWithGoogle(activeRole);
+      onNotification("Sign-in Success", `Signed in as ${user.email} (${activeRole.toUpperCase()})`);
       onAuthSuccess(user);
     } catch (err) {
       setErrorMsg(err.message || "Failed to sign in via Google.");
@@ -43,19 +54,19 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
     }
   };
 
-  // Standard login handling
+  // Standard Login
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!loginEmail.trim() || !loginPassword.trim()) {
-      setErrorMsg("Please fill in all email and password parameters.");
+      setErrorMsg("Please provide your email and password.");
       return;
     }
     setIsLoading(true);
     setErrorMsg("");
-    const role = authView === "patient-login" ? "patient" : "clinician";
+
     try {
-      const user = await loginUser(loginEmail, loginPassword, role);
-      onNotification("🔑 Sign-in Success", `Access granted. Role: ${role.toUpperCase()}`);
+      const user = await loginUser(loginEmail, loginPassword, activeRole);
+      onNotification("Sign-in Success", `Access granted to ${activeRole.toUpperCase()} Portal.`);
       onAuthSuccess(user);
     } catch (err) {
       setErrorMsg(err.message || "Invalid credentials.");
@@ -64,33 +75,24 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
     }
   };
 
-  // Patient registration submit
-  const handleRegisterSubmit = async () => {
-    if (!regEmail.trim() || !regPassword.trim() || !regName.trim() || !regMobile.trim()) {
-      setErrorMsg("Please ensure all core profile fields are filled.");
+  // Registration
+  const handleRegisterSubmit = async (e) => {
+    e.preventDefault();
+    if (!regEmail.trim() || !regPassword.trim() || !regName.trim()) {
+      setErrorMsg("Please complete all required registration fields.");
       return;
     }
-    
     setIsLoading(true);
     setErrorMsg("");
 
     const profileData = {
       name: regName.trim(),
-      mobile: regMobile.trim(),
-      emergencyContacts: [
-        { name: emergencyContact1.name.trim(), phone: emergencyContact1.phone.trim() },
-        { name: emergencyContact2.name.trim(), phone: emergencyContact2.phone.trim() }
-      ],
-      emergencyEmail: emergencyEmail.trim(),
-      medicalIssue: hasMedicalIssue,
-      medicalIssueText: hasMedicalIssue ? medicalIssueText.trim() : "",
-      ongoingTreatment: isUnderTreatment,
-      ongoingTreatmentText: isUnderTreatment ? treatmentText.trim() : ""
+      mobile: regMobile.trim() || "+1 (555) 000-0000"
     };
 
     try {
       const newUser = await signUpPatient(regEmail, regPassword, profileData);
-      onNotification("🏆 Account Registered", "Medical intake profile compiled and secured.");
+      onNotification("Account Created", "Your SentiMed wellness account has been registered.");
       onAuthSuccess(newUser);
     } catch (err) {
       setErrorMsg(err.message || "Failed to complete account registration.");
@@ -99,720 +101,350 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
     }
   };
 
-  const nextStep = () => {
-    setErrorMsg("");
-    if (registerStep === 1) {
-      if (!regEmail.trim() || !regPassword.trim()) {
-        setErrorMsg("Email and password credentials are required.");
-        return;
-      }
-      if (regPassword.length < 6) {
-        setErrorMsg("Password must be at least 6 characters.");
-        return;
-      }
-    }
-    if (registerStep === 2) {
-      if (!regName.trim() || !regMobile.trim()) {
-        setErrorMsg("Name and mobile number parameters are required.");
-        return;
-      }
-    }
-    if (registerStep === 3) {
-      if (!emergencyContact1.name.trim() || !emergencyContact1.phone.trim() || !emergencyContact2.name.trim() || !emergencyContact2.phone.trim()) {
-        setErrorMsg("Please specify details for both emergency contacts.");
-        return;
-      }
-      if (!emergencyEmail.trim()) {
-        setErrorMsg("An emergency contact email address is required.");
-        return;
-      }
-    }
-    setRegisterStep(prev => prev + 1);
-  };
-
-  const prevStep = () => {
-    setErrorMsg("");
-    setRegisterStep(prev => prev - 1);
-  };
-
   return (
-    <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center", minHeight: "85vh", padding: 20 }}>
-      <div className="glass-card" style={{ width: "100%", maxWidth: authView === "patient-register" ? 640 : 440, padding: 32, boxShadow: "var(--shadow-lg)", transition: "max-width 0.3s ease" }}>
-        
-        {/* Mode Toggle Badge */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, paddingBottom: 10, borderBottom: "1px dashed var(--border-light)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: isRealFirebaseConfigured ? "var(--teal-primary)" : "var(--amber-primary)" }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Mode: {isRealFirebaseConfigured ? "Live Firebase" : "Local Sandbox"}
-            </span>
+    <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 24, padding: "24px 16px" }}>
+      
+      {/* Environment Control Header */}
+      <div 
+        style={{ 
+          width: "100%", 
+          maxWidth: 520, 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center" 
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800 }}>
+            Senti<span style={{ color: "var(--color-primary)" }}>Med</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setForceSandbox(isRealFirebaseConfigured)}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--teal-dark)",
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: "pointer",
-              textDecoration: "underline",
-              padding: 0
+          <span 
+            style={{ 
+              backgroundColor: "#EAF7F2", 
+              color: "#2E7D62", 
+              border: "1px solid #D4EDE4", 
+              borderRadius: "9999px", 
+              fontSize: 12, 
+              fontWeight: 600, 
+              padding: "3px 10px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4
             }}
           >
-            {isRealFirebaseConfigured ? "Switch to Sandbox Mode" : "Switch to Live Firebase"}
+            <ShieldCheck size={13} />
+            Sandbox Portal
+          </span>
+        </div>
+
+        {/* Environment Toggle Button */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span 
+            style={{ 
+              display: "inline-flex", 
+              alignItems: "center", 
+              gap: 6, 
+              fontSize: 12, 
+              color: isRealFirebaseConfigured ? "#2E7D62" : "#B8690A", 
+              fontWeight: 600,
+              backgroundColor: isRealFirebaseConfigured ? "#EAF7F2" : "#FFF8EC",
+              padding: "4px 8px",
+              borderRadius: "6px"
+            }}
+          >
+            <span 
+              style={{ 
+                width: 6, 
+                height: 6, 
+                borderRadius: "50%", 
+                backgroundColor: isRealFirebaseConfigured ? "#4CAF91" : "#F5A623" 
+              }} 
+            />
+            {isRealFirebaseConfigured ? "Live Firebase" : "Sandbox Mode"}
+          </span>
+
+          <button
+            type="button"
+            onClick={() => setForceSandbox(!isRealFirebaseConfigured)}
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: "4px 8px" }}
+          >
+            Switch Mode
           </button>
         </div>
-        
-        {/* Toggle switch between views */}
-        {authView !== "patient-register" && (
-          <div style={{ display: "flex", background: "var(--indigo-light)", padding: 4, borderRadius: 10, marginBottom: 24, gap: 4 }}>
+      </div>
+
+      {/* Main Authentication Card */}
+      <div
+        className="card"
+        style={{
+          width: "100%",
+          maxWidth: 500,
+          padding: "36px 32px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
+          borderRadius: 20
+        }}
+      >
+        {/* Unified Role Segmented Control Tabs */}
+        {!isRegister && (
+          <div className="segmented-control">
             <button
-              onClick={() => {
-                setAuthView("patient-login");
-                setErrorMsg("");
-              }}
-              style={{
-                flex: 1,
-                border: "none",
-                background: authView === "patient-login" ? "#fff" : "none",
-                color: authView === "patient-login" ? "var(--text-dark)" : "var(--text-muted)",
-                padding: "8px 12px",
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "pointer"
-              }}
+              type="button"
+              onClick={() => { setAuthView("patient-login"); setErrorMsg(""); }}
+              className={`segmented-tab ${activeRole === "patient" ? "active" : ""}`}
             >
-              Patient Sign-in
+              <Leaf size={15} />
+              <span>Patient</span>
             </button>
             <button
-              onClick={() => {
-                setAuthView("clinician-login");
-                setErrorMsg("");
-              }}
-              style={{
-                flex: 1,
-                border: "none",
-                background: authView === "clinician-login" ? "#fff" : "none",
-                color: authView === "clinician-login" ? "var(--text-dark)" : "var(--text-muted)",
-                padding: "8px 12px",
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "pointer"
-              }}
+              type="button"
+              onClick={() => { setAuthView("doctor-login"); setErrorMsg(""); }}
+              className={`segmented-tab ${activeRole === "doctor" ? "active" : ""}`}
             >
-              Clinician Portal
+              <Stethoscope size={15} />
+              <span>Doctor</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAuthView("admin-login"); setErrorMsg(""); }}
+              className={`segmented-tab ${activeRole === "admin" ? "active" : ""}`}
+            >
+              <ShieldCheck size={15} />
+              <span>Admin</span>
             </button>
           </div>
         )}
 
-        {/* LOG IN VIEWS */}
-        {authView !== "patient-register" && (
-          <div className="fade-in-anim" style={{ textAlign: "left" }}>
-            <div style={{ textAlign: "center", marginBottom: 20 }}>
-              <span style={{ fontSize: 32 }}>{authView === "patient-login" ? "🍃" : "🩺"}</span>
-              <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 700, color: "var(--indigo-primary)", marginTop: 6 }}>
-                {authView === "patient-login" ? "SentiMed Patient Access" : "Clinician Medical Hub"}
-              </h2>
-              <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-                Enter credentials or connect using Google credentials.
-              </p>
-            </div>
+        {/* Circular Soft Icon */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 12 }}>
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              backgroundColor: "#EAF7F2",
+              color: "#2E7D62",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            {activeRole === "doctor" ? <Stethoscope size={28} /> : activeRole === "admin" ? <ShieldCheck size={28} /> : <Leaf size={28} />}
+          </div>
 
-            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Email Address</label>
+          <div>
+            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 700, color: "#1A1A2E" }}>
+              {isRegister 
+                ? "Create SentiMed Account" 
+                : activeRole === "doctor"
+                  ? "Doctor Care Access" 
+                  : activeRole === "admin"
+                    ? "Administrator Control Access"
+                    : "SentiMed Patient Access"}
+            </h1>
+            <p style={{ fontSize: 13, color: "#6F7280", marginTop: 4 }}>
+              {isRegister
+                ? "Begin tracking your cognitive wellness with confidential AI reflection."
+                : "Securely access your SentiMed workspace."}
+            </p>
+          </div>
+        </div>
+
+        {/* Error Alert Box */}
+        {errorMsg && (
+          <div
+            style={{
+              backgroundColor: "var(--color-danger-soft)",
+              color: "#A83C3C",
+              border: "1px solid rgba(224, 92, 92, 0.2)",
+              padding: "12px 16px",
+              borderRadius: 10,
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 10
+            }}
+          >
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {/* Standard Login Form */}
+        {!isRegister ? (
+          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {/* Email Field */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label htmlFor="auth-email" style={{ fontSize: 13, fontWeight: 600, color: "#1A1A2E" }}>
+                Email address
+              </label>
+              <div className="input-group">
+                <span className="input-icon-left">
+                  <Mail size={18} />
+                </span>
                 <input
+                  id="auth-email"
                   type="email"
-                  placeholder="Enter email address"
+                  className="input-field"
+                  placeholder="demo@example.com"
                   value={loginEmail}
-                  onChange={e => setLoginEmail(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1.5px solid var(--border-light)",
-                    fontSize: 13,
-                    outline: "none",
-                    background: "#FAF9F5"
-                  }}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  required
                 />
               </div>
-
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Security Password</label>
-                <input
-                  type="password"
-                  placeholder="Enter password"
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1.5px solid var(--border-light)",
-                    fontSize: 13,
-                    outline: "none",
-                    background: "#FAF9F5"
-                  }}
-                />
-              </div>
-
-              {errorMsg && (
-                <div style={{ background: "rgba(224, 92, 92, 0.08)", border: "1.5px solid var(--rose-primary)", borderRadius: 12, padding: 14, textAlign: "center" }}>
-                  <div style={{ color: "var(--rose-dark)", fontSize: 12, fontWeight: 700 }}>
-                    {errorMsg}
-                  </div>
-                  {errorMsg.includes("configuration-not-found") && (
-                    <div style={{ fontSize: 11, color: "var(--text-main)", marginTop: 8, lineHeight: 1.4 }}>
-                      💡 <strong>Firebase Setup Required:</strong> You need to enable <strong>Email/Password</strong> sign-in method in your Firebase Authentication Console {"(Sign-in method -> Add provider -> Email/Password)"}.
-                      <div style={{ marginTop: 10 }}>
-                        <button
-                          type="button"
-                          onClick={() => setForceSandbox(true)}
-                          style={{
-                            background: "var(--teal-primary)",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 8,
-                            padding: "6px 12px",
-                            fontSize: 11,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                          }}
-                        >
-                          Switch to Offline Sandbox Mode
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="btn-hover"
-                style={{
-                  background: "var(--indigo-primary)",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 12,
-                  padding: 12,
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  marginTop: 6
-                }}
-              >
-                {isLoading ? "Authenticating..." : "Sign In with Password"}
-              </button>
-            </form>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0" }}>
-              <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
-              <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>or</span>
-              <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
             </div>
 
-            {/* Google OAuth Button */}
+            {/* Password Field */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label htmlFor="auth-password" style={{ fontSize: 13, fontWeight: 600, color: "#1A1A2E" }}>
+                Password
+              </label>
+              <div className="input-group">
+                <span className="input-icon-left">
+                  <Lock size={18} />
+                </span>
+                <input
+                  id="auth-password"
+                  type={showPassword ? "text" : "password"}
+                  className="input-field has-right-icon"
+                  placeholder="••••••••••••"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="input-icon-right"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Submit Button */}
             <button
-              onClick={() => handleGoogleLogin(authView === "patient-login" ? "patient" : "clinician")}
+              type="submit"
+              className="btn btn-primary btn-lg"
               disabled={isLoading}
-              className="btn-hover"
-              style={{
-                width: "100%",
-                background: "#fff",
-                border: "1.5px solid var(--border-light)",
-                borderRadius: 12,
-                padding: 11,
-                fontSize: 13,
-                fontWeight: 700,
-                color: "var(--text-dark)",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8
-              }}
+              style={{ marginTop: 6 }}
             >
-              <svg width="18" height="18" viewBox="0 0 18 18">
-                <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285f4"/>
-                <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34a853"/>
-                <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#fbbc05"/>
-                <path d="M9 3.58c1.32 0 2.505.453 3.44 1.346l2.582-2.58C13.463.896 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#ea4335"/>
+              {isLoading ? (
+                <>
+                  <Loader2 size={18} className="spin-anim" />
+                  <span>Authenticating...</span>
+                </>
+              ) : (
+                <span>Sign In as {activeRole.toUpperCase()}</span>
+              )}
+            </button>
+          </form>
+        ) : (
+          /* Registration Form */
+          <form onSubmit={handleRegisterSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: "#1A1A2E" }}>Full Name</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="e.g. Alex Morgan"
+                value={regName}
+                onChange={(e) => setRegName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: "#1A1A2E" }}>Email address</label>
+              <input
+                type="email"
+                className="input-field"
+                placeholder="alex@example.com"
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: "#1A1A2E" }}>Password</label>
+              <input
+                type="password"
+                className="input-field"
+                placeholder="Create a strong password"
+                value={regPassword}
+                onChange={(e) => setRegPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <button type="submit" className="btn btn-primary btn-lg" disabled={isLoading} style={{ marginTop: 8 }}>
+              {isLoading ? <Loader2 size={18} className="spin-anim" /> : "Complete Registration"}
+            </button>
+          </form>
+        )}
+
+        {/* Google OAuth Section */}
+        {!isRegister && (
+          <>
+            <div className="or-divider">
+              <span>OR</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              className="btn btn-secondary btn-lg"
+              disabled={isLoading}
+              style={{ width: "100%" }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
               </svg>
               <span>Continue with Google</span>
             </button>
-
-            {authView === "patient-login" && (
-              <div style={{ marginTop: 24, textAlign: "center", fontSize: 12 }}>
-                <span style={{ color: "var(--text-muted)" }}>New to SentiMed? </span>
-                <button
-                  onClick={() => {
-                    setAuthView("patient-register");
-                    setRegisterStep(1);
-                    setErrorMsg("");
-                  }}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "var(--teal-primary)",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    textDecoration: "underline"
-                  }}
-                >
-                  Register Patient Account
-                </button>
-              </div>
-            )}
-          </div>
+          </>
         )}
 
-        {/* PATIENT REGISTRATION/INTAKE WIZARD */}
-        {authView === "patient-register" && (
-          <div className="fade-in-anim" style={{ textAlign: "left" }}>
-            
-            {/* Header progress details */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1.5px solid var(--border-light)", paddingBottom: 12, marginBottom: 20 }}>
-              <div>
-                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: "var(--indigo-primary)" }}>Patient Intake Registration</h2>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>Provide demographics, emergency circles, and medical parameters.</div>
-              </div>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--teal-dark)", background: "var(--teal-light)", padding: "4px 10px", borderRadius: 12 }}>
-                Step {registerStep} of 4
-              </span>
-            </div>
-
-            {/* STEP 1: ACCOUNT CREDENTIALS */}
-            {registerStep === 1 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-dark)" }}>Step 1: Account Login Parameters</h3>
-                
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Email Address (Patient Email)</label>
-                  <input
-                    type="email"
-                    placeholder="example@patient.com"
-                    value={regEmail}
-                    onChange={e => setRegEmail(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1.5px solid var(--border-light)",
-                      fontSize: 13,
-                      outline: "none",
-                      background: "#FAF9F5"
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Password (Min. 6 characters)</label>
-                  <input
-                    type="password"
-                    placeholder="Create secure password"
-                    value={regPassword}
-                    onChange={e => setRegPassword(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1.5px solid var(--border-light)",
-                      fontSize: 13,
-                      outline: "none",
-                      background: "#FAF9F5"
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: PROFILE DETAILS */}
-            {registerStep === 2 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-dark)" }}>Step 2: Demographics & Profiles</h3>
-
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Patient Full Name</label>
-                  <input
-                    type="text"
-                    placeholder="Enter name"
-                    value={regName}
-                    onChange={e => setRegName(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1.5px solid var(--border-light)",
-                      fontSize: 13,
-                      outline: "none",
-                      background: "#FAF9F5"
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Patient Mobile Number</label>
-                  <input
-                    type="tel"
-                    placeholder="Enter mobile number"
-                    value={regMobile}
-                    onChange={e => setRegMobile(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1.5px solid var(--border-light)",
-                      fontSize: 13,
-                      outline: "none",
-                      background: "#FAF9F5"
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: EMERGENCY CIRCLE */}
-            {registerStep === 3 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-dark)" }}>Step 3: Emergency Contacts & Emails</h3>
-
-                {/* Contact 1 */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, background: "var(--indigo-light)", padding: 12, borderRadius: 10 }}>
-                  <div style={{ gridColumn: "span 2", fontSize: 11, fontWeight: 700, color: "var(--indigo-primary)", textTransform: "uppercase" }}>Primary Emergency Contact</div>
-                  <div>
-                    <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Contact Name</label>
-                    <input
-                      type="text"
-                      placeholder="Name"
-                      value={emergencyContact1.name}
-                      onChange={e => setEmergencyContact1({ ...emergencyContact1, name: e.target.value })}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        border: "1.5px solid var(--border-light)",
-                        fontSize: 12,
-                        outline: "none",
-                        background: "#fff"
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Contact Phone</label>
-                    <input
-                      type="tel"
-                      placeholder="Phone number"
-                      value={emergencyContact1.phone}
-                      onChange={e => setEmergencyContact1({ ...emergencyContact1, phone: e.target.value })}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        border: "1.5px solid var(--border-light)",
-                        fontSize: 12,
-                        outline: "none",
-                        background: "#fff"
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Contact 2 */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, background: "var(--indigo-light)", padding: 12, borderRadius: 10 }}>
-                  <div style={{ gridColumn: "span 2", fontSize: 11, fontWeight: 700, color: "var(--indigo-primary)", textTransform: "uppercase" }}>Secondary Emergency Contact</div>
-                  <div>
-                    <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Contact Name</label>
-                    <input
-                      type="text"
-                      placeholder="Name"
-                      value={emergencyContact2.name}
-                      onChange={e => setEmergencyContact2({ ...emergencyContact2, name: e.target.value })}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        border: "1.5px solid var(--border-light)",
-                        fontSize: 12,
-                        outline: "none",
-                        background: "#fff"
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Contact Phone</label>
-                    <input
-                      type="tel"
-                      placeholder="Phone number"
-                      value={emergencyContact2.phone}
-                      onChange={e => setEmergencyContact2({ ...emergencyContact2, phone: e.target.value })}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        border: "1.5px solid var(--border-light)",
-                        fontSize: 12,
-                        outline: "none",
-                        background: "#fff"
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Emergency Email */}
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Emergency Email (Notification Dispatch Target)</label>
-                  <input
-                    type="email"
-                    placeholder="emergency-notifications@contact.com"
-                    value={emergencyEmail}
-                    onChange={e => setEmergencyEmail(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1.5px solid var(--border-light)",
-                      fontSize: 13,
-                      outline: "none",
-                      background: "#FAF9F5"
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: MEDICAL BACKGROUND */}
-            {registerStep === 4 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-dark)" }}>Step 4: Clinical History & Active Treatment</h3>
-
-                {/* Medical issue selection */}
-                <div style={{ border: "1.5px solid var(--border-light)", borderRadius: 12, padding: 14, background: hasMedicalIssue ? "var(--amber-light)" : "none" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <label style={{ fontSize: 13, fontWeight: 700, color: "var(--text-dark)" }}>
-                      Are you currently suffering from any medical issues?
-                    </label>
-                    <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-                      <button
-                        type="button"
-                        onClick={() => setHasMedicalIssue(true)}
-                        style={{
-                          flex: 1,
-                          padding: "8px 16px",
-                          borderRadius: 8,
-                          border: "1.5px solid " + (hasMedicalIssue ? "var(--teal-primary)" : "var(--border-light)"),
-                          background: hasMedicalIssue ? "var(--teal-light)" : "#fff",
-                          color: hasMedicalIssue ? "var(--teal-dark)" : "var(--text-muted)",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          fontSize: 13,
-                          transition: "all 0.2s"
-                        }}
-                      >
-                        Yes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHasMedicalIssue(false);
-                          setMedicalIssueText("");
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: "8px 16px",
-                          borderRadius: 8,
-                          border: "1.5px solid " + (!hasMedicalIssue ? "var(--rose-primary)" : "var(--border-light)"),
-                          background: !hasMedicalIssue ? "var(--rose-light)" : "#fff",
-                          color: !hasMedicalIssue ? "var(--rose-dark)" : "var(--text-muted)",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          fontSize: 13,
-                          transition: "all 0.2s"
-                        }}
-                      >
-                        No
-                      </button>
-                    </div>
-                  </div>
-                  {hasMedicalIssue && (
-                    <textarea
-                      placeholder="Please describe medical issues (e.g. chronic pain, physical ailments, clinical diagnoses)..."
-                      value={medicalIssueText}
-                      onChange={e => setMedicalIssueText(e.target.value)}
-                      style={{
-                        width: "100%",
-                        height: 60,
-                        border: "1px solid var(--border-light)",
-                        borderRadius: 8,
-                        padding: 8,
-                        fontSize: 12,
-                        outline: "none",
-                        resize: "none",
-                        marginTop: 10,
-                        background: "#fff",
-                        fontFamily: "var(--font-sans)"
-                      }}
-                    />
-                  )}
-                </div>
-
-                {/* Ongoing treatment selection */}
-                <div style={{ border: "1.5px solid var(--border-light)", borderRadius: 12, padding: 14, background: isUnderTreatment ? "var(--teal-light)" : "none" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <label style={{ fontSize: 13, fontWeight: 700, color: "var(--text-dark)" }}>
-                      Is any active medical treatment or therapy going on?
-                    </label>
-                    <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-                      <button
-                        type="button"
-                        onClick={() => setIsUnderTreatment(true)}
-                        style={{
-                          flex: 1,
-                          padding: "8px 16px",
-                          borderRadius: 8,
-                          border: "1.5px solid " + (isUnderTreatment ? "var(--teal-primary)" : "var(--border-light)"),
-                          background: isUnderTreatment ? "var(--teal-light)" : "#fff",
-                          color: isUnderTreatment ? "var(--teal-dark)" : "var(--text-muted)",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          fontSize: 13,
-                          transition: "all 0.2s"
-                        }}
-                      >
-                        Yes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsUnderTreatment(false);
-                          setTreatmentText("");
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: "8px 16px",
-                          borderRadius: 8,
-                          border: "1.5px solid " + (!isUnderTreatment ? "var(--rose-primary)" : "var(--border-light)"),
-                          background: !isUnderTreatment ? "var(--rose-light)" : "#fff",
-                          color: !isUnderTreatment ? "var(--rose-dark)" : "var(--text-muted)",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          fontSize: 13,
-                          transition: "all 0.2s"
-                        }}
-                      >
-                        No
-                      </button>
-                    </div>
-                  </div>
-                  {isUnderTreatment && (
-                    <textarea
-                      placeholder="Describe ongoing treatment, active therapy, or registered medications..."
-                      value={treatmentText}
-                      onChange={e => setTreatmentText(e.target.value)}
-                      style={{
-                        width: "100%",
-                        height: 60,
-                        border: "1px solid var(--border-light)",
-                        borderRadius: 8,
-                        padding: 8,
-                        fontSize: 12,
-                        outline: "none",
-                        resize: "none",
-                        marginTop: 10,
-                        background: "#fff",
-                        fontFamily: "var(--font-sans)"
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Error notifications */}
-            {errorMsg && (
-              <div style={{ background: "rgba(224, 92, 92, 0.08)", border: "1.5px solid var(--rose-primary)", borderRadius: 12, padding: 14, marginTop: 14, textAlign: "center" }}>
-                <div style={{ color: "var(--rose-dark)", fontSize: 12, fontWeight: 700 }}>
-                  {errorMsg}
-                </div>
-                {errorMsg.includes("configuration-not-found") && (
-                  <div style={{ fontSize: 11, color: "var(--text-main)", marginTop: 8, lineHeight: 1.4 }}>
-                    💡 <strong>Firebase Setup Required:</strong> You need to enable <strong>Email/Password</strong> sign-in method in your Firebase Authentication Console {"(Sign-in method -> Add provider -> Email/Password)"}.
-                    <div style={{ marginTop: 10 }}>
-                      <button
-                        type="button"
-                        onClick={() => setForceSandbox(true)}
-                        style={{
-                          background: "var(--teal-primary)",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: 8,
-                          padding: "6px 12px",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Switch to Offline Sandbox Mode
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Step navigation buttons */}
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24, borderTop: "1px solid var(--border-light)", paddingTop: 18 }}>
-              {registerStep > 1 ? (
-                <button
-                  type="button"
-                  onClick={prevStep}
-                  style={{ background: "none", border: "1.5px solid var(--border-light)", borderRadius: 12, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text-dark)" }}
-                >
-                  Back
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthView("patient-login");
-                    setErrorMsg("");
-                  }}
-                  style={{ background: "none", border: "1.5px solid var(--border-light)", borderRadius: 12, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text-dark)" }}
-                >
-                  Cancel
-                </button>
-              )}
-
-              {registerStep < 4 ? (
-                <button
-                  type="button"
-                  onClick={nextStep}
-                  style={{ background: "var(--indigo-primary)", color: "#fff", border: "none", borderRadius: 12, padding: "10px 24px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-                >
-                  Continue
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleRegisterSubmit}
-                  disabled={isLoading}
-                  style={{ background: "var(--teal-primary)", color: "#fff", border: "none", borderRadius: 12, padding: "10px 24px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-                >
-                  {isLoading ? "Saving Intake Profile..." : "Register Profile"}
-                </button>
-              )}
-            </div>
-
-          </div>
-        )}
+        {/* Footer Registration Toggle */}
+        <div style={{ textAlign: "center", fontSize: 13, color: "#6F7280", marginTop: 4 }}>
+          {isRegister ? (
+            <span>
+              Already registered?{" "}
+              <button
+                type="button"
+                onClick={() => setAuthView("patient-login")}
+                style={{ background: "none", border: "none", color: "#2E7D62", fontWeight: 600, cursor: "pointer" }}
+              >
+                Sign In
+              </button>
+            </span>
+          ) : (
+            <span>
+              New to SentiMed?{" "}
+              <button
+                type="button"
+                onClick={() => setAuthView("patient-register")}
+                style={{ background: "none", border: "none", color: "#2E7D62", fontWeight: 600, cursor: "pointer" }}
+              >
+                Create an account
+              </button>
+            </span>
+          )}
+        </div>
 
       </div>
+
+      <div style={{ fontSize: 12, color: "#6F7280", textAlign: "center" }}>
+        Protected by SentiMed HIPAA-compliant sandbox encryption standards.
+      </div>
+
     </div>
   );
 }

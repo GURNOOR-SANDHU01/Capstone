@@ -1,280 +1,284 @@
 import { useState, useEffect } from "react";
-import PatientPortal from "./components/PatientPortal";
-import ClinicianPortal from "./components/ClinicianPortal";
-import NotificationSimulator from "./components/NotificationSimulator";
+import AppShell from "./components/AppShell";
+import SentiMedLoader from "./components/SentiMedLoader";
+import DashboardView from "./components/views/DashboardView";
+import JournalView from "./components/views/JournalView";
+import InsightsView from "./components/views/InsightsView";
+import CompanionView from "./components/views/CompanionView";
+import ProfileView from "./components/views/ProfileView";
 import AuthPortal from "./components/AuthPortal";
-import { onAuthStateChange, logoutUser } from "./services/firebase";
+
+import PiiMaskingView from "./components/privacy/PiiMaskingView";
+
+import PatientOnboardingWizard from "./components/patient/PatientOnboardingWizard";
+import PatientSafetyView from "./components/patient/PatientSafetyView";
+import DoctorSafetyCenterView from "./components/doctor/DoctorSafetyCenterView";
+import AdminSafetyCenterView from "./components/admin/AdminSafetyCenterView";
+
+import { 
+  PatientAppointmentsView, 
+  PatientConsultationsView,
+  PatientRemindersView, 
+  PatientHistoryView 
+} from "./components/patient/PatientPortalViews";
+
+import { 
+  DoctorDashboardView, 
+  DoctorSharedJournalsView, 
+  DoctorRemindersView, 
+  DoctorMessagingView,
+  DoctorAppointmentsView,
+  DoctorConsultationsView
+} from "./components/doctor/DoctorPortalViews";
+
+import { 
+  AdminDashboardView, 
+  AdminDoctorMgmtView, 
+  AdminClinicMgmtView, 
+  AdminAuditLogsView 
+} from "./components/admin/AdminPortalViews";
+
+import { ROLES } from "./constants/roles";
+import { getJournalEntries } from "./services/journalService";
+import { useAuth } from "./hooks/useAuth";
+import { useProfileCompletion } from "./hooks/useProfileCompletion";
 import "./App.css";
 
-// Shared initial state
-const INITIAL_ENTRIES = [
-  {
-    id: 1,
-    date: "Today, 9:41 AM",
-    mood: "Calm",
-    moodEmoji: "😌",
-    text: "Woke up feeling surprisingly clear-headed despite the rough week. Did a short walk and noticed how the morning light filtered through the trees. It helped quiet my thoughts.",
-    tags: ["morning", "nature"],
-    sentiment: 72,
-    multimodal: { text: 72, voice: 68, video: 75 },
-    reflection: "Focusing on physical sensations in the morning helped prevent my mind from racing about the day's to-do list."
-  },
-  {
-    id: 2,
-    date: "Yesterday, 11:20 PM",
-    mood: "Anxious",
-    moodEmoji: "😰",
-    text: "Can't stop thinking about the clinician presentation tomorrow. My chest feels tight. I keep running the worst-case scenarios in my head, worrying I will stumble over my words.",
-    tags: ["work", "stress"],
-    sentiment: 28,
-    multimodal: { text: 25, voice: 30, video: 30 },
-    reflection: "I recognized that my thoughts are running worst-case scenarios. Realistically, I am prepared and a few stumbles are normal."
-  },
-  {
-    id: 3,
-    date: "May 21, 8:05 PM",
-    mood: "Joyful",
-    moodEmoji: "😄",
-    text: "Had dinner with the whole family. Laughed more than I have in months. These are the moments I want to hold on to. Grateful for their support.",
-    tags: ["family", "connection"],
-    sentiment: 91,
-    multimodal: { text: 92, voice: 88, video: 94 },
-    reflection: "Making intentional time for family dinners directly boosts my sense of connection and grounding."
-  }
-];
-
 function App() {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [authInitialized, setAuthInitialized] = useState(false);
-  const [currentView, setCurrentView] = useState("patient"); // patient, clinician
-  const [entries, setEntries] = useState(INITIAL_ENTRIES);
-  const [wearableConnected, setWearableConnected] = useState(true);
+  const { currentUser, setCurrentUser, authInitialized, logout } = useAuth();
+  const [activeTab, setActiveTab] = useState("dashboard");
   
-  // Slide-down notifications state
+  // Safety Alert State
+  const [urgentSafetyAlert, setUrgentSafetyAlert] = useState(null);
+
+  const [entries, setEntries] = useState(() => getJournalEntries());
+  const [wearableConnected, setWearableConnected] = useState(true);
   const [activeAlert, setActiveAlert] = useState(null);
 
-  // Subscribe to Firebase / Sandbox Auth updates
-  useEffect(() => {
-    const unsubscribe = onAuthStateChange((user) => {
-      setCurrentUser(user);
-      if (user) {
-        // Enforce role-based routing
-        setCurrentView(user.role || "patient");
-      }
-      setAuthInitialized(true);
-    });
-    return () => unsubscribe && unsubscribe();
-  }, []);
+  // Authoritative Profile Completion evaluation
+  const { isComplete, firstMissingStep } = useProfileCompletion(currentUser);
 
-  // Close alert after delay
+  // Set default tab on user authentication
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.role === ROLES.ADMIN) {
+        setActiveTab("admin-dashboard");
+      } else if (currentUser.role === ROLES.DOCTOR) {
+        setActiveTab("doctor-dashboard");
+      } else {
+        setActiveTab("dashboard");
+      }
+    }
+  }, [currentUser]);
+
+  // Dismiss notification toast after delay
   useEffect(() => {
     if (activeAlert) {
       const timer = setTimeout(() => {
         setActiveAlert(null);
-      }, 5000);
+      }, 4000);
       return () => clearTimeout(timer);
     }
   }, [activeAlert]);
 
   const handleTriggerNotification = (title, message) => {
-    const newAlert = { id: Date.now(), title, message };
-    setActiveAlert(newAlert);
+    setActiveAlert({ id: Date.now(), title, message });
   };
 
   const handleLogout = async () => {
     try {
-      await logoutUser();
-      handleTriggerNotification("🔒 Session Terminated", "Signed out securely from clinical workspace.");
+      await logout();
+      handleTriggerNotification("Signed Out", "You have signed out from SentiMed.");
     } catch (e) {
-      console.error("Error signing out:", e);
+      console.error("Sign out error:", e);
     }
   };
 
+  // Engaging Initial Welcome Loading Experience
   if (!authInitialized) {
-    return (
-      <div style={{ display: "flex", flex: 1, flexDirection: "column", justifyContent: "center", alignItems: "center", minHeight: "100vh", background: "#1A1A2E", color: "#fff" }}>
-        <div style={{ fontSize: 44, animation: "pulse 1.2s infinite" }}>🍃</div>
-        <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 800, marginTop: 12, fontSize: 20 }}>SentiMed Secure Core</h2>
-        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 6 }}>Calibrating HIPAA compliance credentials...</p>
-      </div>
-    );
+    return <SentiMedLoader variant="initial" />;
   }
 
+  // Not logged in -> Show AuthPortal
   if (!currentUser) {
     return (
-      <div className="hub-container" style={{ background: "radial-gradient(circle at 10% 20%, rgba(26,26,46,0.06) 0%, rgba(76,175,145,0.03) 90.1%), #FAF9F6" }}>
-        <header style={{
-          background: "var(--indigo-primary)",
-          color: "#fff",
-          padding: "14px 24px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          height: 58,
-          zIndex: 100
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px" }}>
-              Senti<span style={{ color: "var(--teal-primary)" }}>Med</span>
-            </div>
-            <span style={{ fontSize: 10, background: "rgba(255, 255, 255, 0.1)", padding: "2px 8px", borderRadius: 12, color: "var(--teal-primary)", fontWeight: 700 }}>
-              COMPLIANT SANDBOX
-            </span>
-          </div>
-        </header>
+      <div style={{ minHeight: "100vh", background: "var(--color-bg)", display: "flex", flexDirection: "column" }}>
         <main style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-          <AuthPortal 
+          <AuthPortal
             onAuthSuccess={(user) => {
               setCurrentUser(user);
-              setCurrentView(user.role || "patient");
+              if (user.role === ROLES.ADMIN) {
+                setActiveTab("admin-dashboard");
+              } else if (user.role === ROLES.DOCTOR) {
+                setActiveTab("doctor-dashboard");
+              } else {
+                setActiveTab("dashboard");
+              }
             }}
             onNotification={handleTriggerNotification}
           />
         </main>
-        <footer style={{ background: "#fff", borderTop: "1px solid var(--border-light)", padding: "12px 24px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
-          SentiMed Sandbox Authentication Portal. HIPAA standards active.
-        </footer>
       </div>
     );
   }
 
+  const userRole = currentUser?.role || ROLES.PATIENT;
+
+  // Render First-Time Patient Onboarding Wizard ONLY if profile is incomplete
+  if (userRole === ROLES.PATIENT && !isComplete) {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
+        <PatientOnboardingWizard
+          currentUser={currentUser}
+          initialStep={firstMissingStep}
+          onComplete={() => {
+            setCurrentUser({ ...currentUser });
+            handleTriggerNotification("Profile Completed", "Welcome to your SentiMed dashboard.");
+          }}
+          onTriggerUrgentSafety={(record) => {
+            setCurrentUser({ ...currentUser });
+            setUrgentSafetyAlert(record);
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Logged in & Complete -> Show Role-Aware AppShell
   return (
-    <div className="hub-container">
-      
-      {/* Top Main Hub Switcher Navigation */}
-      <header style={{
-        background: "var(--indigo-primary)",
-        color: "#fff",
-        padding: "14px 24px",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        boxShadow: "var(--shadow-md)",
-        height: 58,
-        zIndex: 100,
-        flexShrink: 0
-      }}>
-        {/* Logo and compliance tag */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px" }}>
-            Senti<span style={{ color: "var(--teal-primary)" }}>Med</span>
-          </div>
-          <span style={{
-            fontSize: 10,
-            background: "rgba(255, 255, 255, 0.1)",
-            padding: "2px 8px",
-            borderRadius: 12,
-            color: "var(--teal-primary)",
-            fontWeight: 700,
-            letterSpacing: "0.5px"
-          }}>
-            SECURED PORTAL
-          </span>
-        </div>
+    <AppShell
+      activeTab={activeTab}
+      setActiveTab={(tab) => {
+        setActiveTab(tab);
+      }}
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      onNotification={handleTriggerNotification}
+    >
+      {/* Urgent Safety Screen Modal */}
+      {urgentSafetyAlert && (
+        <PatientSafetyView
+          onDismiss={() => setUrgentSafetyAlert(null)}
+        />
+      )}
 
-        {/* Swaps between Patient and Clinician View */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          
-          {/* Dashboard Title */}
-          <span style={{ fontSize: 12, color: "var(--teal-primary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-            {currentUser.role === "clinician" ? "🩺 Care Coordinator Workspace" : "👤 Personal Care Dashboard"}
-          </span>
-
-          <button
-            onClick={handleLogout}
-            style={{
-              border: "1px solid rgba(255,255,255,0.2)",
-              background: "none",
-              color: "#fff",
-              padding: "6px 14px",
-              borderRadius: 8,
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
-            className="btn-hover"
-          >
-            Sign Out
-          </button>
-        </div>
-
-        {/* Right side helper info */}
-        <div style={{ fontSize: 11, color: "rgba(255, 255, 255, 0.6)", fontWeight: 500 }}>
-          User: <strong>{currentUser.profile?.name || currentUser.email}</strong>
-        </div>
-      </header>
-
-      {/* Main Workspace Body */}
-      <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        
-        {currentView === "patient" ? (
-          <PatientPortal
-            entries={entries}
-            setEntries={setEntries}
-            onNotification={handleTriggerNotification}
-            wearableConnected={wearableConnected}
-            setWearableConnected={setWearableConnected}
-            currentUser={currentUser}
-          />
-        ) : (
-          <div style={{ flex: 1, padding: 24, overflowY: "auto" }}>
-            <ClinicianPortal
-              patientEntries={entries}
-              onNotification={handleTriggerNotification}
+      {/* PATIENT PORTAL ROUTES */}
+      {userRole === ROLES.PATIENT && (
+        <>
+          {activeTab === "dashboard" && (
+            <DashboardView
+              entries={entries}
+              onNavigate={(tab) => setActiveTab(tab)}
               currentUser={currentUser}
             />
-          </div>
-        )}
+          )}
+          {activeTab === "companion" && (
+            <CompanionView currentUser={currentUser} />
+          )}
+          {activeTab === "appointments" && (
+            <PatientAppointmentsView
+              onNotification={handleTriggerNotification}
+            />
+          )}
+          {activeTab === "doctor-consultations" && (
+            <PatientConsultationsView />
+          )}
+          {activeTab === "journal" && (
+            <JournalView
+              entries={entries}
+              setEntries={setEntries}
+              onNotification={handleTriggerNotification}
+            />
+          )}
+          {activeTab === "insights" && <InsightsView entries={entries} />}
+          {activeTab === "reminders" && <PatientRemindersView />}
+          {activeTab === "history" && <PatientHistoryView />}
+          {activeTab === "privacy-masking" && <PiiMaskingView />}
+        </>
+      )}
 
-        {/* Floating macOS-Style Desktop Notification Toast (Top Right) */}
-        {activeAlert && (
-          <div
-            className="slide-up-anim"
-            style={{
-              position: "fixed",
-              top: 74,
-              right: 24,
-              width: 340,
-              background: "rgba(28, 28, 30, 0.95)",
-              backdropFilter: "blur(16px)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 16,
-              padding: "16px",
-              color: "#fff",
-              boxShadow: "var(--shadow-lg)",
-              zIndex: 9999,
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              textAlign: "left"
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10, opacity: 0.7, fontWeight: 700, textTransform: "uppercase" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span>🍃</span>
-                <span>SentiMed System</span>
-              </div>
-              <span>just now</span>
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>{activeAlert.title}</div>
-            <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{activeAlert.message}</div>
-          </div>
-        )}
+      {/* DOCTOR PORTAL ROUTES */}
+      {userRole === ROLES.DOCTOR && (
+        <>
+          {(activeTab === "doctor-dashboard" || activeTab === "doctor-patients") && (
+            <DoctorDashboardView
+              onNavigate={(tab) => setActiveTab(tab)}
+            />
+          )}
+          {activeTab === "doctor-safety" && (
+            <DoctorSafetyCenterView
+              onNotification={handleTriggerNotification}
+            />
+          )}
+          {activeTab === "doctor-shared-journals" && <DoctorSharedJournalsView />}
+          {activeTab === "doctor-appointments" && (
+            <DoctorAppointmentsView
+              onNotification={handleTriggerNotification}
+            />
+          )}
+          {activeTab === "doctor-consultations" && (
+            <DoctorConsultationsView />
+          )}
+          {activeTab === "doctor-reminders" && (
+            <DoctorRemindersView onNotification={handleTriggerNotification} />
+          )}
+          {activeTab === "doctor-messaging" && <DoctorMessagingView />}
+        </>
+      )}
 
-        {/* Floating Simulation Center (Bottom Right) */}
-        <div style={{
-          position: "fixed",
-          bottom: 24,
-          right: 24,
-          zIndex: 9998,
-          pointerEvents: "none"
-        }}>
-          <NotificationSimulator triggerNotification={handleTriggerNotification} />
+      {/* ADMIN PORTAL ROUTES */}
+      {userRole === ROLES.ADMIN && (
+        <>
+          {activeTab === "admin-dashboard" && (
+            <AdminDashboardView onNavigate={(tab) => setActiveTab(tab)} />
+          )}
+          {activeTab === "admin-safety" && <AdminSafetyCenterView />}
+          {activeTab === "admin-doctors" && (
+            <AdminDoctorMgmtView onNotification={handleTriggerNotification} />
+          )}
+          {activeTab === "admin-clinics" && (
+            <AdminClinicMgmtView onNotification={handleTriggerNotification} />
+          )}
+          {activeTab === "admin-audit" && <AdminAuditLogsView />}
+        </>
+      )}
+
+      {/* SHARED ROUTES */}
+      {activeTab === "profile" && (
+        <ProfileView
+          currentUser={currentUser}
+          wearableConnected={wearableConnected}
+          setWearableConnected={setWearableConnected}
+          onNotification={handleTriggerNotification}
+        />
+      )}
+
+      {/* Toast Notification Alert Banner */}
+      {activeAlert && (
+        <div
+          className="slide-up-anim"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            maxWidth: 360,
+            width: "100%",
+            background: "#1A1A2E",
+            color: "#FFFFFF",
+            padding: "16px 20px",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "var(--shadow-lg)",
+            zIndex: 9999,
+            display: "flex",
+            flexDirection: "column",
+            gap: 4
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{activeAlert.title}</div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>{activeAlert.message}</div>
         </div>
-
-      </div>
-    </div>
+      )}
+    </AppShell>
   );
 }
 
