@@ -1,44 +1,58 @@
 import React, { useState } from 'react';
-import { 
-  Users, 
-  Video, 
-  Calendar, 
-  Bell, 
-  Lock, 
-  ShieldCheck, 
-  Plus, 
+import {
+  Users,
+  Video,
+  Calendar,
+  Lock,
+  ShieldCheck,
+  Plus,
   Send,
   Clock,
-  CheckCircle2
+  MessageSquare
 } from 'lucide-react';
 
-import { CLINICIAN_PATIENTS_DEMO } from '../../data/mockData';
-import { getJournalEntries } from '../../services/journalService';
-import { getDoctorReminders, createDoctorReminder } from '../../services/doctorService';
-import { getMessages, sendMessage } from '../../services/messagingService';
+import { listPatientSharedEntries } from '../../services/journalService';
+import {
+  listMyPatients,
+  listCareInstructions,
+  createCareInstruction,
+  listConversation,
+  sendConversationMessage,
+  listSafetyAlerts,
+  ACCESS_LEVEL_LABELS
+} from '../../services/clinicalApi';
+import { describeError } from '../../services/apiClient';
 import { useAppointments } from '../../hooks/useAppointments';
+import { useAsyncData } from '../../hooks/useAsyncData';
 import { AppointmentCard } from '../appointments/AppointmentCard';
 import { DoctorScheduleDrawer } from '../appointments/DoctorScheduleDrawer';
 import { CareInstructionDrawer } from './CareInstructionDrawer';
 import { RescheduleAppointmentModal } from '../appointments/RescheduleAppointmentModal';
 import { MeetingButton } from '../appointments/MeetingButton';
-import { PageHeader, Button, Card, Badge, Modal, EmptyState } from '../ui';
+import { meetingProviderLabel } from '../../services/appointmentService';
+import { PageHeader, Button, Card, Badge, Modal, EmptyState, LoadState } from '../ui';
 import { PageTransition } from '../animations';
 import SentimentBar from '../SentimentBar';
 
+const notify = (onNotification, title, message) => onNotification && onNotification(title, message);
+
 // Doctor Care Dashboard View
 export function DoctorDashboardView({ onNavigate }) {
-  const patients = CLINICIAN_PATIENTS_DEMO;
+  const roster = useAsyncData(listMyPatients, [], []);
+  const alerts = useAsyncData(listSafetyAlerts, [], []);
   const { confirmedConsultations, pendingRequests } = useAppointments();
+  const patients = roster.data || [];
+  const openAlertsFor = (patientId) =>
+    (alerts.data || []).filter((a) => a.patientId === patientId && !a.status.includes("Resolved")).length;
 
   return (
     <PageTransition>
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        <div 
-          className="card" 
-          style={{ 
-            background: "linear-gradient(135deg, #1A1A2E 0%, #2E7D62 100%)", 
-            color: "#FFFFFF", 
+        <div
+          className="card"
+          style={{
+            background: "linear-gradient(135deg, #1A1A2E 0%, #2E7D62 100%)",
+            color: "#FFFFFF",
             padding: 28,
             display: "flex",
             justifyContent: "space-between",
@@ -55,14 +69,14 @@ export function DoctorDashboardView({ onNavigate }) {
               Doctor Care Dashboard
             </h1>
             <p style={{ fontSize: 14, opacity: 0.85, marginTop: 4 }}>
-              Monitor authorized patient telemetry, review appointment requests, and join Google Meet consultations.
+              Review consenting patients, appointment requests, and safety alerts.
             </p>
           </div>
 
-          <Button 
-            variant="primary" 
-            size="lg" 
-            icon={Calendar} 
+          <Button
+            variant="primary"
+            size="lg"
+            icon={Calendar}
             onClick={() => onNavigate('doctor-appointments')}
             style={{ backgroundColor: "#FFFFFF", color: "#1A1A2E" }}
           >
@@ -72,15 +86,15 @@ export function DoctorDashboardView({ onNavigate }) {
 
         <div className="app-grid-3">
           <div className="card">
-            <span style={{ fontSize: 12, color: "var(--color-text-muted)", fontWeight: 700 }}>ASSIGNED PATIENTS</span>
-            <div style={{ fontSize: 28, fontWeight: 800, color: "#1A1A2E", marginTop: 4 }}>{patients.length}</div>
+            <span style={{ fontSize: 12, color: "var(--color-text-muted)", fontWeight: 700 }}>CONSENTING PATIENTS</span>
+            <div style={{ fontSize: 28, fontWeight: 800, color: "#1A1A2E", marginTop: 4 }}>{roster.loading ? "…" : patients.length}</div>
             <span className="badge badge-primary" style={{ marginTop: 8 }}>Authorized Roster</span>
           </div>
 
           <div className="card">
             <span style={{ fontSize: 12, color: "var(--color-text-muted)", fontWeight: 700 }}>CONFIRMED CONSULTATIONS</span>
             <div style={{ fontSize: 28, fontWeight: 800, color: "var(--color-primary-dark)", marginTop: 4 }}>{confirmedConsultations.length}</div>
-            <span className="badge badge-primary" style={{ marginTop: 8 }}>Google Meet Scheduled</span>
+            <span className="badge badge-primary" style={{ marginTop: 8 }}>Video Calls Scheduled</span>
           </div>
 
           <div className="card">
@@ -94,27 +108,35 @@ export function DoctorDashboardView({ onNavigate }) {
         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h3 style={{ fontSize: 16, fontWeight: 700 }}>Authorized Patient Overview</h3>
-            <Button variant="ghost" size="sm" onClick={() => onNavigate('doctor-patients')}>View All</Button>
+            <Button variant="ghost" size="sm" onClick={() => onNavigate('doctor-shared-journals')}>Shared Journals</Button>
           </div>
 
+          <LoadState loading={roster.loading} error={roster.error} onRetry={roster.reload} label="Loading your patients..." />
+          {!roster.loading && !roster.error && patients.length === 0 && (
+            <EmptyState
+              icon={Users}
+              title="No consenting patients yet"
+              description="Patients appear here after they grant you access from their Profile & Settings."
+            />
+          )}
+
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {patients.map(p => (
-              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, background: "var(--color-bg)", borderRadius: 10 }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{p.name}</div>
-                  <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>ID: {p.id} • Streak: {p.streak} days</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span className={`badge ${p.status === "danger" ? "badge-danger" : p.status === "monitor" ? "badge-warning" : "badge-primary"}`}>
-                    {p.status}
+            {patients.map(p => {
+              const open = openAlertsFor(p.id);
+              return (
+                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, background: "var(--color-bg)", borderRadius: 10, gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+                      {ACCESS_LEVEL_LABELS[p.accessLevel] || p.accessLevel}{p.consentSince ? ` • since ${p.consentSince}` : ""}
+                    </div>
+                  </div>
+                  <span className={`badge ${open ? "badge-danger" : "badge-primary"}`}>
+                    {open ? `${open} open alert${open > 1 ? "s" : ""}` : "No open alerts"}
                   </span>
-                  <MeetingButton
-                    meetingUrl="https://meet.google.com/demo-sentimed-call"
-                    size="sm"
-                  />
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -124,12 +146,15 @@ export function DoctorDashboardView({ onNavigate }) {
 
 // Doctor Appointments View (Request Queue & Confirm/Reject/Reschedule Actions)
 export function DoctorAppointmentsView({ onNotification }) {
-  const { 
-    appointments, 
-    handleConfirm, 
-    handleReject, 
-    handleReschedule, 
-    scheduleDoctorAppointment 
+  const {
+    appointments,
+    loading,
+    error,
+    refresh,
+    handleConfirm,
+    handleReject,
+    handleReschedule,
+    scheduleDoctorAppointment
   } = useAppointments();
 
   const [isScheduleDrawerOpen, setIsScheduleDrawerOpen] = useState(false);
@@ -137,37 +162,36 @@ export function DoctorAppointmentsView({ onNotification }) {
   const [rejectionReason, setRejectionReason] = useState("");
   const [reschedulingApt, setReschedulingApt] = useState(null);
 
-  const handleConfirmClick = (id) => {
-    handleConfirm(id);
-    if (onNotification) {
-      onNotification("Appointment Confirmed", "Meeting assigned with Google Meet link.");
+  const run = async (fn, okTitle, okMessage) => {
+    try {
+      await fn();
+      notify(onNotification, okTitle, okMessage);
+      return true;
+    } catch (err) {
+      notify(onNotification, "Action Failed", describeError(err));
+      return false;
     }
   };
 
-  const handleRejectSubmit = (e) => {
+  const handleConfirmClick = (id) =>
+    run(() => handleConfirm(id), "Appointment Confirmed", "A secure video call link has been assigned.");
+
+  const handleRejectSubmit = async (e) => {
     e.preventDefault();
-    if (rejectingAptId) {
-      handleReject(rejectingAptId, rejectionReason);
+    if (!rejectingAptId) return;
+    const ok = await run(() => handleReject(rejectingAptId, rejectionReason), "Request Declined", "Rejection reason sent to the patient.");
+    if (ok) {
       setRejectingAptId(null);
       setRejectionReason("");
-      if (onNotification) {
-        onNotification("Request Declined", "Rejection reason saved and sent to patient.");
-      }
     }
   };
 
-  const handleRescheduleSubmit = (id, date, time, note) => {
-    handleReschedule(id, date, time, note);
-    if (onNotification) {
-      onNotification("Reschedule Sent", "Proposed new time sent to patient for review.");
-    }
-  };
+  const handleRescheduleSubmit = (id, date, time, note) =>
+    run(() => handleReschedule(id, date, time, note), "Reschedule Sent", "Proposed new time sent to the patient for review.");
 
-  const handleDoctorScheduleSubmit = (data) => {
-    scheduleDoctorAppointment(data);
-    if (onNotification) {
-      onNotification("Appointment Scheduled", `Confirmed consultation scheduled for ${data.patientName}`);
-    }
+  const handleDoctorScheduleSubmit = async (data) => {
+    await scheduleDoctorAppointment(data); // errors are shown inside the drawer
+    notify(onNotification, "Appointment Scheduled", `Confirmed consultation scheduled for ${data.patientName}`);
   };
 
   return (
@@ -184,6 +208,10 @@ export function DoctorAppointmentsView({ onNotification }) {
         />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <LoadState loading={loading} error={error} onRetry={refresh} label="Loading appointments..." />
+          {!loading && !error && appointments.length === 0 && (
+            <EmptyState icon={Calendar} title="No appointments" description="Patient requests and scheduled consultations will appear here." />
+          )}
           {appointments.map(apt => (
             <AppointmentCard
               key={apt.id}
@@ -208,13 +236,13 @@ export function DoctorAppointmentsView({ onNotification }) {
           <form onSubmit={handleRejectSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 4 }}>REASON FOR DECLINING</label>
-              <textarea 
-                className="input-field" 
-                rows={3} 
-                placeholder="Explain reason (e.g. Doctor unavailable at requested time)..." 
-                value={rejectionReason} 
-                onChange={(e) => setRejectionReason(e.target.value)} 
-                required 
+              <textarea
+                className="input-field"
+                rows={3}
+                placeholder="Explain reason (e.g. Doctor unavailable at requested time)..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                required
                 style={{ height: "auto" }}
               />
             </div>
@@ -237,24 +265,25 @@ export function DoctorAppointmentsView({ onNotification }) {
   );
 }
 
-// Doctor Consultations View (Today's CONFIRMED Google Meet Meetings ONLY)
+// Doctor Consultations View (CONFIRMED meetings only)
 export function DoctorConsultationsView() {
-  const { confirmedConsultations } = useAppointments();
+  const { confirmedConsultations, loading, error, refresh } = useAppointments();
 
   return (
     <PageTransition>
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <PageHeader
           title="Doctor Consultations"
-          description="View today's confirmed clinical consultations and join Google Meet meetings."
+          description="Confirmed clinical consultations and their secure video call links."
         />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {confirmedConsultations.length === 0 ? (
-            <EmptyState 
-              icon={Video} 
-              title="No Confirmed Consultations Today" 
-              description="Confirmed patient appointments will appear here with active Google Meet links." 
+          <LoadState loading={loading} error={error} onRetry={refresh} label="Loading consultations..." />
+          {!loading && !error && confirmedConsultations.length === 0 ? (
+            <EmptyState
+              icon={Video}
+              title="No Confirmed Consultations"
+              description="Confirmed patient appointments will appear here with their video call links."
             />
           ) : (
             confirmedConsultations.map((apt) => (
@@ -262,10 +291,10 @@ export function DoctorConsultationsView() {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 16, fontWeight: 700, color: "#1A1A2E" }}>Patient: {apt.patientName}</span>
-                    <Badge variant="primary">Google Meet</Badge>
+                    <Badge variant="primary">{meetingProviderLabel(apt.meetingProvider)}</Badge>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 2 }}>
-                    Patient ID: {apt.patientId} • {apt.type}
+                    {apt.type}{apt.clinicName ? ` • ${apt.clinicName}` : ""}
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-primary-dark)", marginTop: 6, display: "flex", alignItems: "center", gap: 12 }}>
                     <span><Calendar size={14} style={{ display: "inline", marginRight: 4 }} />{apt.date}</span>
@@ -287,10 +316,45 @@ export function DoctorConsultationsView() {
   );
 }
 
+/** Patient picker shared by the doctor views below. */
+function PatientPicker({ roster, value, onChange }) {
+  const patients = roster.data || [];
+  if (roster.loading || roster.error) return <LoadState loading={roster.loading} error={roster.error} onRetry={roster.reload} label="Loading patients..." />;
+  if (patients.length === 0) {
+    return (
+      <EmptyState
+        icon={Users}
+        title="No consenting patients"
+        description="Patients appear here after they grant you access from their Profile & Settings."
+      />
+    );
+  }
+  return (
+    <select className="input-field" value={value || ""} onChange={(e) => onChange(e.target.value)} aria-label="Select patient">
+      {patients.map((p) => (
+        <option key={p.id} value={p.id}>{p.name}</option>
+      ))}
+    </select>
+  );
+}
+
+/** Selected patient id, defaulting to the first patient in the roster. */
+function useSelectedPatient(roster) {
+  const [patientId, setPatientId] = useState("");
+  return [patientId || roster.data?.[0]?.id || "", setPatientId];
+}
+
 // Doctor Shared Journal Review Sub-view
 export function DoctorSharedJournalsView() {
-  const allEntries = getJournalEntries();
-  const sharedEntries = allEntries.filter(e => e.privacy === "shared");
+  const roster = useAsyncData(listMyPatients, [], []);
+  const [patientId, setPatientId] = useSelectedPatient(roster);
+  const journal = useAsyncData(
+    () => (patientId ? listPatientSharedEntries(patientId) : Promise.resolve({ entries: [], access: null })),
+    [patientId],
+    { entries: [], access: null }
+  );
+  const { entries = [], access } = journal.data || {};
+  const patientName = (roster.data || []).find((p) => p.id === patientId)?.name || "Patient";
 
   return (
     <PageTransition>
@@ -303,33 +367,55 @@ export function DoctorSharedJournalsView() {
             </span>
           </div>
           <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
-            Backend permissions strictly enforce that only entries explicitly marked as "SHARED WITH DOCTOR" are accessible.
+            The server only returns entries the patient marked "Shared with Doctor", and only while they consent to your access.
           </p>
         </div>
 
+        <PatientPicker roster={roster} value={patientId} onChange={setPatientId} />
+
+        {access === "summary" && (
+          <div className="card" style={{ fontSize: 13, background: "#FFF8EC" }}>
+            <strong>Summary access:</strong> {patientName} shares mood and safety trends with you, but not journal text.
+          </div>
+        )}
+
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {sharedEntries.length === 0 ? (
+          {patientId && <LoadState loading={journal.loading} error={journal.error} onRetry={journal.reload} label="Loading shared entries..." />}
+          {patientId && !journal.loading && !journal.error && entries.length === 0 && (
             <div className="card" style={{ textAlign: "center", padding: 32, color: "var(--color-text-muted)" }}>
               <Lock size={32} style={{ margin: "0 auto 8px auto", opacity: 0.5 }} />
-              <p>No patient entries shared with you yet.</p>
+              <p>{patientName} has not shared any journal entries yet.</p>
             </div>
-          ) : (
-            sharedEntries.map(e => (
-              <div key={e.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>Gurnoor Sandhu (P-0041)</div>
-                  <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{e.date}</div>
-                </div>
-                <p style={{ fontSize: 13, lineHeight: 1.5 }}>{e.text}</p>
-                <SentimentBar value={e.sentiment} label="Multimodal Sentiment Score" />
-                {e.reflection && (
-                  <div style={{ background: "var(--color-bg)", padding: 8, borderRadius: 6, fontSize: 11 }}>
-                    <strong>CBT Reflection:</strong> {e.reflection}
-                  </div>
-                )}
-              </div>
-            ))
           )}
+          {entries.map(e => (
+            <div key={e.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>
+                  {patientName} <span className="badge badge-primary" style={{ marginLeft: 6 }}>{e.mood}</span>
+                  {e.severity && e.severity !== "normal" && (
+                    <span className={`badge ${e.severity === "high" ? "badge-danger" : "badge-warning"}`} style={{ marginLeft: 6 }}>{e.severity} concern</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{e.date}</div>
+              </div>
+              {e.access === "summary" ? (
+                <p style={{ fontSize: 12, color: "var(--color-text-muted)", fontStyle: "italic" }}>Journal text is not included in summary access.</p>
+              ) : (
+                <p style={{ fontSize: 13, lineHeight: 1.5 }}>{e.text}</p>
+              )}
+              <SentimentBar value={e.sentiment} label="Sentiment Score" />
+              {e.reflection && (
+                <div style={{ background: "var(--color-bg)", padding: 8, borderRadius: 6, fontSize: 11 }}>
+                  <strong>CBT Reflection:</strong> {e.reflection}
+                </div>
+              )}
+              {e.tags?.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {e.tags.map((t) => <span key={t} className="badge badge-muted" style={{ fontSize: 10 }}>#{t}</span>)}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </PageTransition>
@@ -338,15 +424,13 @@ export function DoctorSharedJournalsView() {
 
 // Doctor Reminders / Care Instructions Creator (Drawer-based)
 export function DoctorRemindersView({ onNotification }) {
-  const [reminders, setReminders] = useState(() => getDoctorReminders());
+  const reminders = useAsyncData(listCareInstructions, [], []);
   const [isCareDrawerOpen, setIsCareDrawerOpen] = useState(false);
 
-  const handleCreateInstruction = (data) => {
-    const { updated } = createDoctorReminder(data);
-    setReminders(updated);
-    if (onNotification) {
-      onNotification("Reminder Created", `Instruction issued for ${data.patientName}`);
-    }
+  const handleCreateInstruction = async (data) => {
+    const created = await createCareInstruction(data); // errors are shown inside the drawer
+    reminders.setData((prev) => [created, ...(prev || []).filter((r) => r.id !== created.id)]);
+    notify(onNotification, "Reminder Created", `Instruction issued for ${data.patientName}`);
   };
 
   return (
@@ -363,7 +447,11 @@ export function DoctorRemindersView({ onNotification }) {
         />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {reminders.map(rem => (
+          <LoadState loading={reminders.loading} error={reminders.error} onRetry={reminders.reload} label="Loading care instructions..." />
+          {!reminders.loading && !reminders.error && (reminders.data || []).length === 0 && (
+            <EmptyState title="No care instructions issued" description="Issue a reminder to a consenting patient to see it here." />
+          )}
+          {(reminders.data || []).map(rem => (
             <div key={rem.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>{rem.medicationName}</div>
@@ -386,45 +474,91 @@ export function DoctorRemindersView({ onNotification }) {
   );
 }
 
-// Doctor Patient Messaging Sub-view
-export function DoctorMessagingView() {
-  const [messages, setMsgs] = useState(() => getMessages());
+/**
+ * Secure messaging thread between the signed-in user and one counterpart.
+ * Shared by the doctor and patient messaging views.
+ */
+export function MessageThread({ counterpartId, counterpartName, selfRole, onNotification }) {
+  const thread = useAsyncData(
+    () => (counterpartId ? listConversation(counterpartId) : Promise.resolve([])),
+    [counterpartId],
+    []
+  );
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
-    const updated = sendMessage("doctor", "Dr. Sarah Jenkins", text.trim());
-    setMsgs(updated);
-    setText("");
+    if (!text.trim() || sending) return;
+    setSending(true);
+    try {
+      const updated = await sendConversationMessage(counterpartId, text.trim(), { role: selfRole, name: selfRole === "doctor" ? "Doctor" : "Patient" });
+      thread.setData(updated);
+      setText("");
+    } catch (err) {
+      notify(onNotification, "Message Not Sent", describeError(err));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
-    <PageTransition>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "calc(100vh - 120px)" }}>
-        <div>
-          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800 }}>Secure Patient Messaging</h1>
-          <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>Encrypted messaging thread with patient Gurnoor Sandhu (P-0041).</p>
-        </div>
-
-        <div className="card" style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
-          {messages.map(m => {
-            const isDoctor = m.senderRole === "doctor";
-            return (
-              <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: isDoctor ? "flex-end" : "flex-start" }}>
-                <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 2 }}>{m.senderName} • {m.time}</div>
-                <div style={{ maxWidth: "75%", padding: "10px 14px", borderRadius: 14, background: isDoctor ? "var(--color-primary-dark)" : "var(--color-bg)", color: isDoctor ? "#FFF" : "#1A1A2E" }}>
-                  {m.text}
-                </div>
+    <>
+      <div className="card" style={{ flex: 1, minHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
+        <LoadState loading={thread.loading} error={thread.error} onRetry={thread.reload} label="Loading conversation..." />
+        {!thread.loading && !thread.error && (thread.data || []).length === 0 && (
+          <p style={{ fontSize: 13, color: "var(--color-text-muted)", textAlign: "center", marginTop: 24 }}>
+            No messages yet. Start the conversation with {counterpartName}.
+          </p>
+        )}
+        {(thread.data || []).map(m => {
+          const mine = m.senderRole === selfRole;
+          return (
+            <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
+              <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 2 }}>{m.senderName} • {m.time}</div>
+              <div style={{ maxWidth: "75%", padding: "10px 14px", borderRadius: 14, background: mine ? "var(--color-primary-dark)" : "var(--color-bg)", color: mine ? "#FFF" : "#1A1A2E" }}>
+                {m.text}
               </div>
-            );
-          })}
+            </div>
+          );
+        })}
+      </div>
+
+      <form onSubmit={handleSend} style={{ display: "flex", gap: 12 }}>
+        <input
+          type="text"
+          className="input-field"
+          placeholder={`Type a secure message to ${counterpartName}...`}
+          value={text}
+          maxLength={2000}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <Button type="submit" variant="primary" icon={Send} disabled={sending || !text.trim()}>{sending ? "Sending..." : "Send"}</Button>
+      </form>
+    </>
+  );
+}
+
+// Doctor Patient Messaging Sub-view
+export function DoctorMessagingView({ onNotification }) {
+  const roster = useAsyncData(listMyPatients, [], []);
+  const [patientId, setPatientId] = useSelectedPatient(roster);
+  const patientName = (roster.data || []).find((p) => p.id === patientId)?.name || "patient";
+
+  return (
+    <PageTransition>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "calc(100vh - 120px)" }}>
+        <div>
+          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+            <MessageSquare size={22} /> Secure Patient Messaging
+          </h1>
+          <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>Messaging is available with patients who currently consent to your care.</p>
         </div>
 
-        <form onSubmit={handleSend} style={{ display: "flex", gap: 12 }}>
-          <input type="text" className="input-field" placeholder="Type secure message to patient..." value={text} onChange={(e) => setText(e.target.value)} />
-          <Button type="submit" variant="primary" icon={Send}>Send</Button>
-        </form>
+        <PatientPicker roster={roster} value={patientId} onChange={setPatientId} />
+        {patientId && (
+          <MessageThread counterpartId={patientId} counterpartName={patientName} selfRole="doctor" onNotification={onNotification} />
+        )}
       </div>
     </PageTransition>
   );

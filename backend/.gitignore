@@ -1,0 +1,25 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Firebase credentials and keys
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+*.pem
+*.key
+*.cert
+*.p12
+
+# Coverage and test artifacts
+coverage/
+.nyc_output/
+.jest/
+
+# OS files
+.DS_Store
+Thumbs.db

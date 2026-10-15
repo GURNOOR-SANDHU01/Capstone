@@ -2,7 +2,7 @@ import React from 'react';
 import { CheckCircle2, Clock, Calendar, Video } from 'lucide-react';
 import { APPOINTMENT_STATUS } from '../../services/appointmentService';
 
-export function AppointmentTimeline({ status, createdBy }) {
+export function AppointmentTimeline({ status }) {
   const steps = [
     { key: "requested", label: "Requested", done: true },
     { key: "reviewed", label: "Clinician Review", done: status !== APPOINTMENT_STATUS.PENDING },

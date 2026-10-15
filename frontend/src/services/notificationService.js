@@ -38,7 +38,9 @@ export const getNotificationDeliveryLogs = () => {
   try {
     const saved = localStorage.getItem(NOTIFICATION_LOGS_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch {
+    /* localStorage unavailable: fall back to demo data */
+  }
   return [
     {
       id: "notif-1",

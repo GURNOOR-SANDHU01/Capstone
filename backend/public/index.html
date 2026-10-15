@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentience — AI-Assisted Emotional Well-Being</title>
+  <meta name="description" content="AI-assisted emotional well-being platform combining emotion analysis, CBT reflection prompts, longitudinal memories, and therapist consent bridges.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="logo-group">
+        <div class="logo-icon">🌿</div>
+        <div class="logo-text">
+          <h1>Sentience</h1>
+          <p>Well-Being Platform &bull; asia-south1</p>
+        </div>
+      </div>
+      <div class="auth-status-bar">
+        <div class="user-badge" id="userBadge">
+          Status: <strong id="authStatusText">Not Authenticated</strong>
+        </div>
+        <button id="btnAuthAction" class="btn btn-primary btn-sm">Sign In / Switch User</button>
+      </div>
+    </header>
+
+    <!-- Mental Health Safety Disclaimer -->
+    <div class="safety-disclaimer-banner">
+      <span class="icon">ℹ️</span>
+      <div>
+        <strong>Notice:</strong> Sentience is an emotional well-being support application. Automated model predictions are exploratory signals, not clinical diagnoses. If you or someone you know is in crisis, please call emergency services or a national suicide prevention helpline (e.g. <strong>988</strong> in US/Canada or <strong>14416 (Tele-MANAS)</strong> in India).
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs" role="tablist">
+      <button class="nav-tab active" data-tab="tab-journal" id="tabBtnJournal">Journal & Reflection</button>
+      <button class="nav-tab" data-tab="tab-memories" id="tabBtnMemories">Extracted Memories</button>
+      <button class="nav-tab" data-tab="tab-consent" id="tabBtnConsent">Therapist Consent</button>
+      <button class="nav-tab" data-tab="tab-safety" id="tabBtnSafety">Safety Alerts</button>
+      <button class="nav-tab" data-tab="tab-biometrics" id="tabBtnBiometrics">Biometrics</button>
+      <button class="nav-tab" data-tab="tab-system" id="tabBtnSystem">System Diagnostics</button>
+    </nav>
+
+    <!-- Tab 1: Journal & CBT Reflection -->
+    <section id="tab-journal" class="tab-panel active">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">✍️ New Journal Entry</h2>
+            <span class="emotion-badge" id="presidioBadge">Presidio PII Anonymizer Active</span>
+          </div>
+          <form id="formNewEntry">
+            <div class="form-group">
+              <label for="journalContent">Write your thoughts or reflections today:</label>
+              <textarea id="journalContent" placeholder="Describe your day, feelings, challenges, or thoughts... (PII like emails or phones will be automatically scrubbed)"></textarea>
+            </div>
+            <div class="grid-2" style="margin-bottom: 14px;">
+              <div>
+                <label for="inputSource">Input Source</label>
+                <select id="inputSource">
+                  <option value="text">Text (Typed)</option>
+                  <option value="audio">Audio Transcript</option>
+                </select>
+              </div>
+              <div>
+                <label for="entryThemes">Themes (comma separated)</label>
+                <input type="text" id="entryThemes" placeholder="e.g. work, deadlines, walking">
+              </div>
+            </div>
+            <button type="submit" id="btnSubmitEntry" class="btn btn-primary" style="width: 100%;">
+              Process & Save Entry
+            </button>
+          </form>
+
+          <div id="latestAnalysisResult" style="margin-top: 20px; display: none;">
+            <div class="cbt-box">
+              <div class="cbt-title">💡 CBT Reflection Prompt</div>
+              <p id="cbtPromptText" style="font-size: 14px; margin-bottom: 10px;"></p>
+              <textarea id="cbtResponseInput" placeholder="Write your reflection response..." style="min-height: 70px; margin-bottom: 10px;"></textarea>
+              <div style="display: flex; gap: 8px;">
+                <button id="btnSubmitCbtResponse" class="btn btn-secondary btn-sm">Submit Reflection</button>
+                <button id="btnHelpfulPrompt" class="btn btn-secondary btn-sm">👍 Marked Helpful</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">📖 Recent Journal Entries</h2>
+            <button id="btnRefreshEntries" class="btn btn-secondary btn-sm">Refresh</button>
+          </div>
+          <div id="journalEntriesList">
+            <p style="color: var(--text-dim); font-size: 13px;">Loading entries...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 2: Extracted Memories -->
+    <section id="tab-memories" class="tab-panel">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🧠 Long-Term Personalization Memories</h2>
+            <button id="btnRefreshMemories" class="btn btn-secondary btn-sm">Refresh</button>
+          </div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            AI models automatically extract recurring coping strategies, stress patterns, and resilience triggers. You can review them to teach the system what resonates with you.
+          </p>
+          <div id="memoriesList">
+            <p style="color: var(--text-dim); font-size: 13px;">Loading memories...</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">➕ Add Custom Memory</h2>
+          </div>
+          <form id="formAddMemory">
+            <div class="form-group">
+              <label for="customMemoryText">Observed Pattern / Coping Fact</label>
+              <textarea id="customMemoryText" placeholder="e.g. Taking an evening walk after intense study helps reduce anxiety."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="customMemoryType">Memory Type</label>
+              <select id="customMemoryType">
+                <option value="coping_pattern">Coping Pattern</option>
+                <option value="work_stress">Work Stress</option>
+                <option value="exam_anxiety">Exam Anxiety</option>
+                <option value="social_pattern">Social Support Pattern</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Save Memory</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Therapist Consent & Bridges -->
+    <section id="tab-consent" class="tab-panel">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🛡️ Therapist Consent Management</h2>
+          </div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            You have full sovereignty over your mental health data. Therapists cannot access your records without an explicit, active consent bridge.
+          </p>
+          <form id="formGrantConsent">
+            <div class="form-group">
+              <label for="therapistUid">Therapist UID</label>
+              <input type="text" id="therapistUid" placeholder="e.g. therapist_auth_uid_abc123" required>
+            </div>
+            <div class="form-group">
+              <label for="accessLevel">Authorized Access Level</label>
+              <select id="accessLevel">
+                <option value="longitudinal_summary_only">Longitudinal Summary Only (Emotional trends, no raw text)</option>
+                <option value="full_reflection_access">Full Reflection Access</option>
+                <option value="emergency_only">Emergency Red Flag Only</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="enableRedFlagAlerts" checked> Enable Red Flag Safety Alerts
+              </label>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Grant Consent</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">📋 Active Consent Bridges & Audit Logs</h2>
+            <button id="btnRefreshConsent" class="btn btn-secondary btn-sm">Refresh</button>
+          </div>
+          <div id="consentBridgesList">
+            <p style="color: var(--text-dim); font-size: 13px;">Loading bridges...</p>
+          </div>
+          <h3 style="font-size: 14px; margin: 20px 0 10px; color: var(--text-muted);">Immutable Audit History</h3>
+          <div id="consentAuditList" style="max-height: 180px; overflow-y: auto;">
+            <p style="color: var(--text-dim); font-size: 13px;">Loading audit logs...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Safety Alerts -->
+    <section id="tab-safety" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🚨 Safety Monitoring & Red Flag Logs</h2>
+          <button id="btnRefreshSafety" class="btn btn-secondary btn-sm">Refresh</button>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+          Automated safety checks evaluate sustained emotional decline or acute distress language. Alerts are logged into <code>red_flag_alert_logs</code> and dispatched only to explicitly authorized therapists.
+        </p>
+        <div id="safetyAlertsList">
+          <p style="color: var(--text-dim); font-size: 13px;">Loading safety alerts...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 5: Biometrics -->
+    <section id="tab-biometrics" class="tab-panel">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">⌚ Sync Biometrics (Google Fit / Apple Health)</h2>
+          </div>
+          <form id="formSyncBiometrics">
+            <div class="form-group">
+              <label for="bioProvider">Health Provider</label>
+              <select id="bioProvider">
+                <option value="google_fit">Google Fit</option>
+                <option value="apple_health">Apple Health</option>
+              </select>
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label for="bioRestingHr">Resting HR (bpm)</label>
+                <input type="number" id="bioRestingHr" value="72">
+              </div>
+              <div class="form-group">
+                <label for="bioHrv">HR Variability (ms)</label>
+                <input type="number" id="bioHrv" value="48">
+              </div>
+              <div class="form-group">
+                <label for="bioSleepHours">Sleep Hours</label>
+                <input type="number" step="0.5" id="bioSleepHours" value="7.5">
+              </div>
+              <div class="form-group">
+                <label for="bioStress">Self-Reported Stress (1-10)</label>
+                <input type="number" id="bioStress" min="1" max="10" value="4">
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Simulate Biometric Sync</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">📊 Sync Audit Logs</h2>
+            <button id="btnRefreshBiometrics" class="btn btn-secondary btn-sm">Refresh</button>
+          </div>
+          <div id="biometricsLogsList">
+            <p style="color: var(--text-dim); font-size: 13px;">Loading sync logs...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 6: System Diagnostics & Health -->
+    <section id="tab-system" class="tab-panel">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🩺 System Health Status</h2>
+            <button id="btnCheckHealth" class="btn btn-secondary btn-sm">Run Check</button>
+          </div>
+          <div id="healthResults" style="font-size: 13px; line-height: 1.8;">
+            <p>Click "Run Check" to inspect Firebase and AI Model status.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">📡 Live API Console / Token Context</h2>
+          </div>
+          <div class="live-output" id="liveConsoleOutput">// API interactions and response payloads appear here...</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

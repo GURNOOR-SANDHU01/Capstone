@@ -1,79 +1,56 @@
-import { useState, useCallback, useMemo } from 'react';
-import { 
-  getAppointments, 
-  createPatientAppointment, 
-  createDoctorAppointment, 
-  confirmAppointment, 
-  rejectAppointment, 
-  rescheduleAppointment, 
-  acceptReschedule, 
-  cancelAppointment,
+import { useCallback, useMemo } from 'react';
+import {
+  fetchAppointments,
+  requestAppointment,
+  scheduleAppointment,
+  appointmentAction,
   APPOINTMENT_STATUS
 } from '../services/appointmentService';
+import { useAsyncData } from './useAsyncData';
 
+/**
+ * Appointment list + actions. Each action resolves with the server's updated appointment
+ * and replaces it in local state (no page reload, no unconfirmed optimistic data).
+ * Actions throw on failure so the caller can show an error.
+ */
 export function useAppointments() {
-  const [appointments, setAppointments] = useState(() => getAppointments());
+  const { data, setData, loading, error, reload } = useAsyncData(fetchAppointments, [], []);
+  const appointments = useMemo(() => data || [], [data]);
 
-  const refresh = useCallback(() => {
-    setAppointments(getAppointments());
-  }, []);
+  const upsert = useCallback((apt) => {
+    setData((prev) => {
+      const list = prev || [];
+      return list.some((a) => a.id === apt.id) ? list.map((a) => (a.id === apt.id ? apt : a)) : [apt, ...list];
+    });
+    return apt;
+  }, [setData]);
 
-  const requestPatientAppointment = useCallback((data) => {
-    const { updated, newApt } = createPatientAppointment(data);
-    setAppointments(updated);
-    return newApt;
-  }, []);
+  const requestPatientAppointment = useCallback(async (form) => upsert(await requestAppointment(form)), [upsert]);
+  const scheduleDoctorAppointment = useCallback(async (form) => upsert(await scheduleAppointment(form)), [upsert]);
+  const handleConfirm = useCallback(async (id) => upsert(await appointmentAction(id, 'confirm')), [upsert]);
+  const handleReject = useCallback(async (id, reason) => upsert(await appointmentAction(id, 'reject', { reason })), [upsert]);
+  const handleReschedule = useCallback(
+    async (id, date, time, note) => upsert(await appointmentAction(id, 'reschedule', { date, time, note })),
+    [upsert]
+  );
+  const handleAcceptReschedule = useCallback(async (id) => upsert(await appointmentAction(id, 'accept_reschedule')), [upsert]);
+  const handleCancel = useCallback(async (id) => upsert(await appointmentAction(id, 'cancel')), [upsert]);
 
-  const scheduleDoctorAppointment = useCallback((data) => {
-    const { updated, newApt } = createDoctorAppointment(data);
-    setAppointments(updated);
-    return newApt;
-  }, []);
-
-  const handleConfirm = useCallback((id) => {
-    const updated = confirmAppointment(id);
-    setAppointments(updated);
-  }, []);
-
-  const handleReject = useCallback((id, reason) => {
-    const updated = rejectAppointment(id, reason);
-    setAppointments(updated);
-  }, []);
-
-  const handleReschedule = useCallback((id, date, time, note) => {
-    const updated = rescheduleAppointment(id, date, time, note);
-    setAppointments(updated);
-  }, []);
-
-  const handleAcceptReschedule = useCallback((id) => {
-    const updated = acceptReschedule(id);
-    setAppointments(updated);
-  }, []);
-
-  const handleCancel = useCallback((id) => {
-    const updated = cancelAppointment(id);
-    setAppointments(updated);
-  }, []);
-
-  // Filtered computed views
-  const pendingRequests = useMemo(() => {
-    return appointments.filter(a => a.status === APPOINTMENT_STATUS.PENDING);
-  }, [appointments]);
-
-  const confirmedConsultations = useMemo(() => {
-    return appointments.filter(a => a.status === APPOINTMENT_STATUS.CONFIRMED);
-  }, [appointments]);
-
-  const rescheduleRequested = useMemo(() => {
-    return appointments.filter(a => a.status === APPOINTMENT_STATUS.RESCHEDULE_REQUESTED);
-  }, [appointments]);
+  const pendingRequests = useMemo(() => appointments.filter((a) => a.status === APPOINTMENT_STATUS.PENDING), [appointments]);
+  const confirmedConsultations = useMemo(() => appointments.filter((a) => a.status === APPOINTMENT_STATUS.CONFIRMED), [appointments]);
+  const rescheduleRequested = useMemo(
+    () => appointments.filter((a) => a.status === APPOINTMENT_STATUS.RESCHEDULE_REQUESTED),
+    [appointments]
+  );
 
   return {
     appointments,
+    loading,
+    error,
     pendingRequests,
     confirmedConsultations,
     rescheduleRequested,
-    refresh,
+    refresh: reload,
     requestPatientAppointment,
     scheduleDoctorAppointment,
     handleConfirm,

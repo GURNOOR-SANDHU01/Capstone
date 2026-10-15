@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  Calendar, 
-  Clock, 
-  Video, 
-  Bell, 
-  Plus, 
+import {
+  Calendar,
+  Clock,
+  Video,
+  Bell,
+  Plus,
   FileText,
   Lock,
   Users,
@@ -13,43 +13,52 @@ import {
 } from 'lucide-react';
 
 import { useAppointments } from '../../hooks/useAppointments';
-import { getDoctorReminders } from '../../services/doctorService';
-import { getJournalEntries } from '../../services/journalService';
+import { listCareInstructions, getConsentStatus } from '../../services/clinicalApi';
+import { describeError } from '../../services/apiClient';
+import { useAsyncData } from '../../hooks/useAsyncData';
+import { MessageThread } from '../doctor/DoctorPortalViews';
+import { meetingProviderLabel } from '../../services/appointmentService';
 import { AppointmentCard } from '../appointments/AppointmentCard';
 import { AppointmentRequestDrawer } from '../appointments/AppointmentRequestDrawer';
 import { MeetingButton } from '../appointments/MeetingButton';
-import { PageHeader, Button, Card, Badge, EmptyState } from '../ui';
+import { PageHeader, Button, Card, Badge, EmptyState, LoadState } from '../ui';
 import { PageTransition } from '../animations';
 
 // Patient Appointments View (Request & Lifecycle Management)
 export function PatientAppointmentsView({ onNotification }) {
-  const { 
-    appointments, 
-    requestPatientAppointment, 
-    handleAcceptReschedule, 
-    handleCancel 
+  const {
+    appointments,
+    loading,
+    error,
+    refresh,
+    requestPatientAppointment,
+    handleAcceptReschedule,
+    handleCancel
   } = useAppointments();
 
   const [isAppointmentDrawerOpen, setIsAppointmentDrawerOpen] = useState(false);
+  const notify = (title, message) => onNotification && onNotification(title, message);
 
-  const handleRequestSubmit = (data) => {
-    requestPatientAppointment(data);
-    if (onNotification) {
-      onNotification("Appointment request sent successfully.", `Your request has been sent to ${data.doctorName}.`);
+  const handleRequestSubmit = async (data) => {
+    await requestPatientAppointment(data); // errors are shown inside the drawer
+    notify("Appointment request sent successfully.", `Your request has been sent to ${data.doctorName}.`);
+  };
+
+  const handleCancelClick = async (id) => {
+    try {
+      await handleCancel(id);
+      notify("Request Cancelled", "Selected appointment request has been cancelled.");
+    } catch (err) {
+      notify("Cancel Failed", describeError(err));
     }
   };
 
-  const handleCancelClick = (id) => {
-    handleCancel(id);
-    if (onNotification) {
-      onNotification("Request Cancelled", "Selected appointment request has been cancelled.");
-    }
-  };
-
-  const handleAcceptClick = (id) => {
-    handleAcceptReschedule(id);
-    if (onNotification) {
-      onNotification("Time Accepted", "Rescheduled appointment confirmed.");
+  const handleAcceptClick = async (id) => {
+    try {
+      await handleAcceptReschedule(id);
+      notify("Time Accepted", "Rescheduled appointment confirmed.");
+    } catch (err) {
+      notify("Update Failed", describeError(err));
     }
   };
 
@@ -68,7 +77,8 @@ export function PatientAppointmentsView({ onNotification }) {
 
         {/* Appointment List */}
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {appointments.length === 0 ? (
+          <LoadState loading={loading} error={error} onRetry={refresh} label="Loading appointments..." />
+          {loading || error ? null : appointments.length === 0 ? (
             <EmptyState title="No Appointments Scheduled" description="Click 'Schedule Consultation' above to request an appointment." />
           ) : (
             appointments.map((apt) => (
@@ -96,7 +106,7 @@ export function PatientAppointmentsView({ onNotification }) {
 
 // Patient Doctor Consultations View (CONFIRMED Google Meet Meetings ONLY)
 export function PatientConsultationsView() {
-  const { confirmedConsultations } = useAppointments();
+  const { confirmedConsultations, loading, error, refresh } = useAppointments();
 
   return (
     <PageTransition>
@@ -107,11 +117,12 @@ export function PatientConsultationsView() {
         />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {confirmedConsultations.length === 0 ? (
-            <EmptyState 
-              icon={Video} 
-              title="No Confirmed Consultations" 
-              description="Confirmed appointments with Google Meet links will appear here once approved by your doctor." 
+          <LoadState loading={loading} error={error} onRetry={refresh} label="Loading consultations..." />
+          {loading || error ? null : confirmedConsultations.length === 0 ? (
+            <EmptyState
+              icon={Video}
+              title="No Confirmed Consultations"
+              description="Confirmed appointments with their video call links will appear here once approved by your doctor."
             />
           ) : (
             confirmedConsultations.map((apt) => (
@@ -119,7 +130,7 @@ export function PatientConsultationsView() {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 16, fontWeight: 700, color: "#1A1A2E" }}>{apt.doctorName}</span>
-                    <Badge variant="primary">Google Meet</Badge>
+                    <Badge variant="primary">{meetingProviderLabel(apt.meetingProvider)}</Badge>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 2 }}>
                     {apt.specialization} • {apt.clinicName}
@@ -146,7 +157,8 @@ export function PatientConsultationsView() {
 
 // Patient Reminders Sub-view
 export function PatientRemindersView() {
-  const reminders = getDoctorReminders();
+  const remindersState = useAsyncData(listCareInstructions, [], []);
+  const reminders = remindersState.data || [];
 
   return (
     <PageTransition>
@@ -157,6 +169,10 @@ export function PatientRemindersView() {
         />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <LoadState loading={remindersState.loading} error={remindersState.error} onRetry={remindersState.reload} label="Loading reminders..." />
+          {!remindersState.loading && !remindersState.error && reminders.length === 0 && (
+            <EmptyState icon={Bell} title="No reminders yet" description="Care instructions from your doctor will appear here." />
+          )}
           {reminders.map((rem) => (
             <div key={rem.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -179,8 +195,7 @@ export function PatientRemindersView() {
 }
 
 // Patient History Sub-view
-export function PatientHistoryView() {
-  const entries = getJournalEntries();
+export function PatientHistoryView({ entries = [] }) {
 
   return (
     <PageTransition>
@@ -191,6 +206,9 @@ export function PatientHistoryView() {
         />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {entries.length === 0 && (
+            <EmptyState title="No Activity Yet" description="Your journal entries will appear here once you start writing." />
+          )}
           {entries.map((e) => (
             <div key={e.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -206,6 +224,44 @@ export function PatientHistoryView() {
             </div>
           ))}
         </div>
+      </div>
+    </PageTransition>
+  );
+}
+
+// Patient Secure Messaging (with doctors the patient currently consents to)
+export function PatientMessagingView({ onNotification }) {
+  const consent = useAsyncData(getConsentStatus, [], { bridges: [] });
+  const doctors = (consent.data?.bridges || []).filter((b) => b.active);
+  const [doctorId, setDoctorId] = useState("");
+  const selected = doctorId || doctors[0]?.doctorId || "";
+  const doctorName = doctors.find((d) => d.doctorId === selected)?.doctorName || "your doctor";
+
+  return (
+    <PageTransition>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "calc(100vh - 120px)" }}>
+        <PageHeader
+          title="Care Team Messages"
+          description="Secure messages with doctors you have granted access to in Profile & Settings."
+        />
+        <LoadState loading={consent.loading} error={consent.error} onRetry={consent.reload} label="Loading your care team..." />
+        {!consent.loading && !consent.error && doctors.length === 0 && (
+          <EmptyState
+            icon={Users}
+            title="No care team yet"
+            description="Grant a doctor access from Profile & Settings to start a secure conversation."
+          />
+        )}
+        {doctors.length > 0 && (
+          <>
+            <select className="input-field" value={selected} onChange={(e) => setDoctorId(e.target.value)} aria-label="Select doctor">
+              {doctors.map((d) => (
+                <option key={d.doctorId} value={d.doctorId}>{d.doctorName}</option>
+              ))}
+            </select>
+            <MessageThread counterpartId={selected} counterpartName={doctorName} selfRole="patient" onNotification={onNotification} />
+          </>
+        )}
       </div>
     </PageTransition>
   );

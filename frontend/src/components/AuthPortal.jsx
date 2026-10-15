@@ -1,34 +1,53 @@
 import { useState } from "react";
-import { 
-  Leaf, 
-  Stethoscope, 
-  ShieldCheck, 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  Loader2, 
+import {
+  Leaf,
+  Stethoscope,
+  ShieldCheck,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Loader2,
   AlertCircle,
   Building2
 } from "lucide-react";
 
-import { 
-  loginUser, 
-  signUpPatient, 
-  loginWithGoogle, 
-  isRealFirebaseConfigured, 
-  setForceSandbox 
+import {
+  loginUser,
+  signUpPatient,
+  loginWithGoogle,
+  isRealFirebaseConfigured,
+  setForceSandbox
 } from "../services/firebase";
+import { describeError } from "../services/apiClient";
+import { ROLE_LABELS } from "../constants/roles";
 
-export default function AuthPortal({ onAuthSuccess, onNotification }) {
+const AUTH_ERROR_MESSAGES = {
+  "auth/invalid-credential": "Incorrect email or password.",
+  "auth/wrong-password": "Incorrect email or password.",
+  "auth/user-not-found": "No account exists with this email.",
+  "auth/invalid-email": "Please enter a valid email address.",
+  "auth/email-already-in-use": "An account with this email already exists. Please sign in instead.",
+  "auth/weak-password": "Password must be at least 6 characters.",
+  "auth/too-many-requests": "Too many attempts. Please wait a moment and try again.",
+  "auth/popup-closed-by-user": "Google sign-in was cancelled.",
+  "auth/network-request-failed": "Network error. Check your connection and try again.",
+  "auth/user-disabled": "This account has been disabled."
+};
+
+const authErrorMessage = (err, fallback) =>
+  AUTH_ERROR_MESSAGES[err?.code] || (err?.name === "ApiError" ? describeError(err) : err?.message) || fallback;
+
+export default function AuthPortal({ onAuthSuccess, onNotification, initialError = "" }) {
   const [authView, setAuthView] = useState("patient-login"); // patient-login, doctor-login, admin-login, patient-register
   const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState(initialError);
   const [showPassword, setShowPassword] = useState(false);
 
   // Login credentials
-  const [loginEmail, setLoginEmail] = useState("demo@example.com");
-  const [loginPassword, setLoginPassword] = useState("password123");
+  // Demo credentials are prefilled only in the offline Sandbox
+  const [loginEmail, setLoginEmail] = useState(isRealFirebaseConfigured ? "" : "demo@example.com");
+  const [loginPassword, setLoginPassword] = useState(isRealFirebaseConfigured ? "" : "password123");
 
   // Registration credentials
   const [regName, setRegName] = useState("");
@@ -39,16 +58,28 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
   const activeRole = authView === "doctor-login" ? "doctor" : authView === "admin-login" ? "admin" : "patient";
   const isRegister = authView === "patient-register";
 
+  // In live mode the account's verified role decides the portal, not the selected tab
+  const announceSignIn = (user) => {
+    if (isRealFirebaseConfigured && user.role !== activeRole) {
+      onNotification(
+        "Signed In",
+        `This account is registered as ${ROLE_LABELS[user.role] || user.role}. Opening that portal.`
+      );
+    } else {
+      onNotification("Sign-in Success", `Access granted to ${ROLE_LABELS[user.role] || user.role} portal.`);
+    }
+  };
+
   // Google Sign-in
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setErrorMsg("");
     try {
       const user = await loginWithGoogle(activeRole);
-      onNotification("Sign-in Success", `Signed in as ${user.email} (${activeRole.toUpperCase()})`);
+      announceSignIn(user);
       onAuthSuccess(user);
     } catch (err) {
-      setErrorMsg(err.message || "Failed to sign in via Google.");
+      setErrorMsg(authErrorMessage(err, "Failed to sign in via Google."));
     } finally {
       setIsLoading(false);
     }
@@ -66,10 +97,10 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
 
     try {
       const user = await loginUser(loginEmail, loginPassword, activeRole);
-      onNotification("Sign-in Success", `Access granted to ${activeRole.toUpperCase()} Portal.`);
+      announceSignIn(user);
       onAuthSuccess(user);
     } catch (err) {
-      setErrorMsg(err.message || "Invalid credentials.");
+      setErrorMsg(authErrorMessage(err, "Invalid credentials."));
     } finally {
       setIsLoading(false);
     }
@@ -87,7 +118,7 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
 
     const profileData = {
       name: regName.trim(),
-      mobile: regMobile.trim() || "+1 (555) 000-0000"
+      mobile: regMobile.trim() || (isRealFirebaseConfigured ? "" : "+1 (555) 000-0000")
     };
 
     try {
@@ -95,7 +126,7 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
       onNotification("Account Created", "Your SentiMed wellness account has been registered.");
       onAuthSuccess(newUser);
     } catch (err) {
-      setErrorMsg(err.message || "Failed to complete account registration.");
+      setErrorMsg(authErrorMessage(err, "Failed to complete account registration."));
     } finally {
       setIsLoading(false);
     }
@@ -103,29 +134,29 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
 
   return (
     <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 24, padding: "24px 16px" }}>
-      
+
       {/* Environment Control Header */}
-      <div 
-        style={{ 
-          width: "100%", 
-          maxWidth: 520, 
-          display: "flex", 
-          justifyContent: "space-between", 
-          alignItems: "center" 
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800 }}>
             Senti<span style={{ color: "var(--color-primary)" }}>Med</span>
           </div>
-          <span 
-            style={{ 
-              backgroundColor: "#EAF7F2", 
-              color: "#2E7D62", 
-              border: "1px solid #D4EDE4", 
-              borderRadius: "9999px", 
-              fontSize: 12, 
-              fontWeight: 600, 
+          <span
+            style={{
+              backgroundColor: "#EAF7F2",
+              color: "#2E7D62",
+              border: "1px solid #D4EDE4",
+              borderRadius: "9999px",
+              fontSize: 12,
+              fontWeight: 600,
               padding: "3px 10px",
               display: "inline-flex",
               alignItems: "center",
@@ -133,39 +164,39 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
             }}
           >
             <ShieldCheck size={13} />
-            Sandbox Portal
+            {isRealFirebaseConfigured ? "Secure Portal" : "Sandbox Portal"}
           </span>
         </div>
 
         {/* Environment Toggle Button */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span 
-            style={{ 
-              display: "inline-flex", 
-              alignItems: "center", 
-              gap: 6, 
-              fontSize: 12, 
-              color: isRealFirebaseConfigured ? "#2E7D62" : "#B8690A", 
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              color: isRealFirebaseConfigured ? "#2E7D62" : "#B8690A",
               fontWeight: 600,
               backgroundColor: isRealFirebaseConfigured ? "#EAF7F2" : "#FFF8EC",
               padding: "4px 8px",
               borderRadius: "6px"
             }}
           >
-            <span 
-              style={{ 
-                width: 6, 
-                height: 6, 
-                borderRadius: "50%", 
-                backgroundColor: isRealFirebaseConfigured ? "#4CAF91" : "#F5A623" 
-              }} 
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                backgroundColor: isRealFirebaseConfigured ? "#4CAF91" : "#F5A623"
+              }}
             />
             {isRealFirebaseConfigured ? "Live Firebase" : "Sandbox Mode"}
           </span>
 
           <button
             type="button"
-            onClick={() => setForceSandbox(!isRealFirebaseConfigured)}
+            onClick={() => setForceSandbox(isRealFirebaseConfigured)}
             className="btn btn-ghost"
             style={{ fontSize: 12, padding: "4px 8px" }}
           >
@@ -236,10 +267,10 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
 
           <div>
             <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 700, color: "#1A1A2E" }}>
-              {isRegister 
-                ? "Create SentiMed Account" 
+              {isRegister
+                ? "Create SentiMed Account"
                 : activeRole === "doctor"
-                  ? "Doctor Care Access" 
+                  ? "Doctor Care Access"
                   : activeRole === "admin"
                     ? "Administrator Control Access"
                     : "SentiMed Patient Access"}
@@ -370,6 +401,17 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: "#1A1A2E" }}>Mobile Number (optional)</label>
+              <input
+                type="tel"
+                className="input-field"
+                placeholder="+91 98765 43210"
+                value={regMobile}
+                onChange={(e) => setRegMobile(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <label style={{ fontSize: 13, fontWeight: 600, color: "#1A1A2E" }}>Password</label>
               <input
                 type="password"
@@ -442,7 +484,9 @@ export default function AuthPortal({ onAuthSuccess, onNotification }) {
       </div>
 
       <div style={{ fontSize: 12, color: "#6F7280", textAlign: "center" }}>
-        Protected by SentiMed HIPAA-compliant sandbox encryption standards.
+        {isRealFirebaseConfigured
+          ? "Signed-in access is verified by the server on every request."
+          : "Sandbox mode: demo data stays in this browser."}
       </div>
 
     </div>

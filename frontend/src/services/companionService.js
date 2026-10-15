@@ -4,6 +4,9 @@
  * Note: Non-medical, educational/reflection wellness companion only.
  */
 
+import { isRealFirebaseConfigured } from "./firebase";
+import { api } from "./apiClient";
+
 const MOCK_AI_RESPONSES = [
   "Thank you for sharing that with me. It takes courage to put your thoughts into words. When you notice that feeling, what physical sensations do you experience first?",
   "That sounds like a heavy situation to navigate. If a close friend came to you describing this exact experience, what compassionate advice would you offer them?",
@@ -33,4 +36,40 @@ export const generateCompanionReply = async (userMessage) => {
   // Fallback response from pool
   const randomIndex = Math.floor(Math.random() * MOCK_AI_RESPONSES.length);
   return MOCK_AI_RESPONSES[randomIndex];
+};
+
+/* ------------------------------------------------------------------ */
+/* Live mode: backend analysis pipeline (PII-scrubbed server-side)     */
+/* ------------------------------------------------------------------ */
+
+const CRISIS_REPLY =
+  "I'm really glad you told me. What you're describing sounds serious, and you deserve support right now. " +
+  "If you might act on these thoughts or are in danger, please call your local emergency number or a crisis line " +
+  "(for example 988 in the US, or Tele-MANAS 14416 in India). You can also reach out to someone you trust. " +
+  "I'm a reflection companion, not a substitute for professional care.";
+
+/**
+ * Companion reply. Live: emotion -> safety -> CBT reflection via the backend (no chat text is stored).
+ * Sandbox: the local rule-based replies above.
+ */
+export const getCompanionReply = async (userMessage) => {
+  if (!isRealFirebaseConfigured) return generateCompanionReply(userMessage);
+
+  const { data: emotions } = await api.post("/analysis/emotions", { content: userMessage });
+  const { data: safety } = await api.post("/analysis/safety", {
+    content: userMessage,
+    detected_emotions: {
+      primary_state: emotions.primary_state,
+      confidence: emotions.confidence,
+      sentiment_score: emotions.sentiment_score
+    }
+  });
+  if (safety.severity_flag === "high" || safety.crisis_language_detected) return CRISIS_REPLY;
+
+  const { data: reflection } = await api.post("/analysis/reflection", {
+    content: userMessage,
+    primary_emotion: emotions.primary_state,
+    sentiment_score: emotions.sentiment_score
+  });
+  return reflection.prompt_text;
 };

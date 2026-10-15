@@ -1,21 +1,21 @@
 import React, { useState } from 'react';
-import { 
-  Stethoscope, 
-  Lock, 
-  AlertTriangle, 
-  FileText, 
-  CheckCircle2, 
-  UserCheck, 
-  ShieldCheck 
+import {
+  Stethoscope,
+  Lock,
+  AlertTriangle,
+  FileText,
+  CheckCircle2,
+  UserCheck,
+  ShieldCheck
 } from 'lucide-react';
 import { CLINICIAN_PATIENTS_DEMO } from '../../data/mockData';
 import SentimentBar from '../SentimentBar';
 
-export default function ClinicianView({ patientEntries = [], onNotification }) {
+export default function ClinicianView({ onNotification }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
   const [authError, setAuthError] = useState("");
-  
+
   const [patients, setPatients] = useState(CLINICIAN_PATIENTS_DEMO);
   const [selectedPatientId, setSelectedPatientId] = useState("P-0041");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -63,13 +63,13 @@ export default function ClinicianView({ patientEntries = [], onNotification }) {
 
   if (!isAuthenticated) {
     return (
-      <div 
-        style={{ 
-          display: "flex", 
-          flexDirection: "column", 
-          alignItems: "center", 
-          justifyContent: "center", 
-          minHeight: "60vh" 
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "60vh"
         }}
       >
         <div className="card" style={{ maxWidth: 400, width: "100%", padding: 36, textAlign: "center" }}>
@@ -147,8 +147,8 @@ export default function ClinicianView({ patientEntries = [], onNotification }) {
           </p>
         </div>
 
-        <button 
-          onClick={() => setIsAuthenticated(false)} 
+        <button
+          onClick={() => setIsAuthenticated(false)}
           className="btn btn-outline btn-sm"
         >
           <Lock size={14} />
@@ -252,7 +252,7 @@ export default function ClinicianView({ patientEntries = [], onNotification }) {
                 <FileText size={16} />
                 <span>Clinical Session Notes</span>
               </h4>
-              
+
               <form onSubmit={handleAddNote} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <textarea
                   className="input-field"

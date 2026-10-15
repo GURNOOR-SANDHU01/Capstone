@@ -1,0 +1,19 @@
+{
+  "name": "sentimed-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "End-to-end tests: React + Express + Firebase Auth/Firestore emulators (never the live project)",
+  "scripts": {
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-sentience --config ../backend/firebase.json",
+    "test:api": "node api.e2e.js",
+    "test:ui": "node ui.e2e.js",
+    "test:care": "node ui-care.e2e.js",
+    "test:sandbox": "node ui-sandbox.e2e.js",
+    "test": "node run-all.js"
+  },
+  "devDependencies": {
+    "firebase": "12.13.0",
+    "firebase-tools": "13.29.1",
+    "playwright-core": "1.48.2"
+  }
+}

@@ -1,28 +1,54 @@
 import React, { useState } from 'react';
-import { 
-  User, 
-  Mail, 
-  Phone, 
-  Watch, 
-  Shield, 
-  Bell, 
-  Save, 
-  CheckCircle2 
+import {
+  User,
+  Mail,
+  Phone,
+  Watch,
+  Shield,
+  Bell,
+  Save,
+  CheckCircle2
 } from 'lucide-react';
+import { updateMyProfile } from '../../services/profileService';
+import { describeError } from '../../services/apiClient';
+import { ROLE_LABELS } from '../../constants/roles';
+import CareTeamAccess from '../patient/CareTeamAccess';
 
-export default function ProfileView({ currentUser, wearableConnected, setWearableConnected, onNotification }) {
+const PHONE_PATTERN = /^[0-9+()\-.\s]{5,30}$/;
+
+export default function ProfileView({ currentUser, onProfileUpdated, wearableConnected, setWearableConnected, onNotification }) {
   const profile = currentUser?.profile || {};
-  
-  const [name, setName] = useState(profile.name || "Gurnoor Sandhu");
-  const [email, setEmail] = useState(currentUser?.email || "demo@example.com");
-  const [mobile, setMobile] = useState(profile.mobile || "+1 (555) 234-5678");
-  
+
+  const [name, setName] = useState(profile.name || "");
+  const email = currentUser?.email || "";
+  const [mobile, setMobile] = useState(profile.mobile || "");
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+
   const [piiMasking, setPiiMasking] = useState(true);
   const [dailyReminders, setDailyReminders] = useState(true);
 
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    onNotification("Profile Updated", "Account preferences saved successfully to local state.");
+    if (!name.trim()) {
+      setFormError("Name is required.");
+      return;
+    }
+    if (mobile.trim() && !PHONE_PATTERN.test(mobile.trim())) {
+      setFormError("Enter a valid phone number (digits, spaces, + - ( ) only).");
+      return;
+    }
+    setSaving(true);
+    setFormError("");
+    try {
+      const updated = await updateMyProfile(currentUser, { name: name.trim(), mobile: mobile.trim() });
+      onProfileUpdated && onProfileUpdated(updated);
+      onNotification("Profile Updated", "Your profile has been saved.");
+    } catch (err) {
+      setFormError(describeError(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -39,12 +65,12 @@ export default function ProfileView({ currentUser, wearableConnected, setWearabl
         {/* Left Column: Personal Information Form */}
         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div 
-              style={{ 
-                width: 64, 
-                height: 64, 
-                borderRadius: "var(--radius-full)", 
-                background: "#EAF7F2", 
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: "var(--radius-full)",
+                background: "#EAF7F2",
                 color: "#2E7D62",
                 display: "flex",
                 alignItems: "center",
@@ -53,11 +79,11 @@ export default function ProfileView({ currentUser, wearableConnected, setWearabl
                 fontWeight: 800
               }}
             >
-              {name.charAt(0)}
+              {(name || email || "?").charAt(0).toUpperCase()}
             </div>
             <div>
               <h2 style={{ fontSize: 18, fontWeight: 800 }}>{name}</h2>
-              <span className="badge badge-primary">{currentUser?.role === "clinician" ? "Clinician Account" : "Patient Account"}</span>
+              <span className="badge badge-primary">{ROLE_LABELS[currentUser?.role] || "Patient"} Account</span>
             </div>
           </div>
 
@@ -91,7 +117,9 @@ export default function ProfileView({ currentUser, wearableConnected, setWearabl
                   type="email"
                   className="input-field"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  readOnly
+                  disabled
+                  title="Your sign-in email cannot be changed here"
                 />
               </div>
             </div>
@@ -113,17 +141,19 @@ export default function ProfileView({ currentUser, wearableConnected, setWearabl
               </div>
             </div>
 
-            <div style={{ textAlign: "right", marginTop: 8 }}>
-              <button type="submit" className="btn btn-primary">
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 8 }}>
+              {formError && <span role="alert" style={{ color: "#C0392B", fontSize: 12, flex: 1 }}>{formError}</span>}
+              <button type="submit" className="btn btn-primary" disabled={saving}>
                 <Save size={16} />
-                <span>Save Changes</span>
+                <span>{saving ? "Saving..." : "Save Changes"}</span>
               </button>
             </div>
           </form>
         </div>
 
-        {/* Right Column: Wearable Devices & Privacy Toggles */}
+        {/* Right Column: Care team, Wearable Devices & Privacy Toggles */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {currentUser?.role === "patient" && <CareTeamAccess onNotification={onNotification} />}
           {/* Wearable Sync Card */}
           <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

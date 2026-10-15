@@ -1,45 +1,50 @@
 import React, { useState } from 'react';
-import { 
-  Users, 
-  Stethoscope, 
-  Building2, 
-  Calendar, 
-  BarChart3, 
-  ShieldCheck, 
-  Plus, 
-  FileText, 
-  Activity, 
-  CheckCircle2, 
-  UserPlus, 
+import {
+  Users,
+  Stethoscope,
+  Building2,
+  Calendar,
+  BarChart3,
+  ShieldCheck,
+  Plus,
+  FileText,
+  Activity,
+  CheckCircle2,
+  UserPlus,
   UserMinus,
   Search,
   Lock,
   Clock
 } from 'lucide-react';
 
-import { 
-  getAdminDoctors, 
-  getAdminClinics, 
-  getAuditLogs, 
-  addDoctor, 
-  addClinic 
-} from '../../services/adminService';
-import { getAppointments } from '../../services/appointmentService';
+import {
+  getAdminStats,
+  listAdminDoctors,
+  addAdminDoctor,
+  listClinics,
+  addAdminClinic,
+  listAuditLogs
+} from '../../services/clinicalApi';
+import { isRealFirebaseConfigured } from '../../services/firebase';
+import { describeError } from '../../services/apiClient';
+import { useAsyncData } from '../../hooks/useAsyncData';
+import { LoadState, EmptyState } from '../ui';
 
 // Admin Dashboard View
 export function AdminDashboardView({ onNavigate }) {
-  const doctors = getAdminDoctors();
-  const clinics = getAdminClinics();
-  const appointments = getAppointments();
-  const auditLogs = getAuditLogs();
+  const statsState = useAsyncData(getAdminStats, [], null);
+  const auditState = useAsyncData(listAuditLogs, [], []);
+  const stats = statsState.data || {};
+  const auditLogs = auditState.data || [];
+  const metric = (value) => (statsState.loading ? "…" : value ?? 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div 
-        className="card" 
-        style={{ 
-          background: "linear-gradient(135deg, #1A1A2E 0%, #2E7D62 100%)", 
-          color: "#FFFFFF", 
+      <div
+        className="card"
+        style={{
+          background: "linear-gradient(135deg, #1A1A2E 0%, #2E7D62 100%)",
+          color: "#FFFFFF",
           padding: 28,
           display: "flex",
           justifyContent: "space-between",
@@ -70,22 +75,32 @@ export function AdminDashboardView({ onNavigate }) {
       <div className="app-grid-3">
         <div className="card">
           <span style={{ fontSize: 12, color: "var(--color-text-muted)", fontWeight: 700 }}>ACTIVE CLINICAL STAFF</span>
-          <div style={{ fontSize: 28, fontWeight: 800, color: "#1A1A2E", marginTop: 4 }}>{doctors.length}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: "#1A1A2E", marginTop: 4 }}>{metric(stats.doctors)}</div>
           <span className="badge badge-primary" style={{ marginTop: 8 }}>Credentialed Doctors</span>
         </div>
 
         <div className="card">
           <span style={{ fontSize: 12, color: "var(--color-text-muted)", fontWeight: 700 }}>REGISTERED CLINICS</span>
-          <div style={{ fontSize: 28, fontWeight: 800, color: "var(--color-primary-dark)", marginTop: 4 }}>{clinics.length}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: "var(--color-primary-dark)", marginTop: 4 }}>{metric(stats.clinics)}</div>
           <span className="badge badge-primary" style={{ marginTop: 8 }}>Active Centers</span>
         </div>
 
         <div className="card">
           <span style={{ fontSize: 12, color: "var(--color-text-muted)", fontWeight: 700 }}>PLATFORM CONSULTATIONS</span>
-          <div style={{ fontSize: 28, fontWeight: 800, color: "#4A90E2", marginTop: 4 }}>{appointments.length}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: "#4A90E2", marginTop: 4 }}>{metric(stats.appointments)}</div>
           <span className="badge badge-warning" style={{ marginTop: 8 }}>Total Booked</span>
         </div>
       </div>
+
+      <LoadState error={statsState.error} onRetry={statsState.reload} />
+      {stats.openAlerts > 0 && (
+        <div className="card" role="status" style={{ borderLeft: "4px solid var(--color-danger)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 13 }}>
+            <strong>{stats.openAlerts}</strong> open safety alert(s){stats.unassignedAlerts ? <>, <strong>{stats.unassignedAlerts}</strong> awaiting triage (no consented doctor)</> : null}.
+          </span>
+          <button onClick={() => onNavigate('admin-safety')} className="btn btn-outline btn-sm">Open Safety Center</button>
+        </div>
+      )}
 
       {/* Audit Log Overview */}
       <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -95,6 +110,10 @@ export function AdminDashboardView({ onNavigate }) {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <LoadState loading={auditState.loading} error={auditState.error} onRetry={auditState.reload} />
+          {!auditState.loading && !auditState.error && auditLogs.length === 0 && (
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>No administrative events recorded yet.</p>
+          )}
           {auditLogs.slice(0, 3).map((log) => (
             <div key={log.id} style={{ padding: 12, background: "var(--color-bg)", borderRadius: 8, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
@@ -112,29 +131,43 @@ export function AdminDashboardView({ onNavigate }) {
 
 // Admin Doctor Management View
 export function AdminDoctorMgmtView({ onNotification }) {
-  const [doctors, setDoctors] = useState(() => getAdminDoctors());
+  const doctorsState = useAsyncData(listAdminDoctors, [], []);
+  const clinicsState = useAsyncData(listClinics, [], []);
+  const doctors = doctorsState.data || [];
+  const clinicOptions = (clinicsState.data || []).map((c) => c.name);
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [specialization, setSpecialization] = useState("Clinical Neuropsychology");
-  const [clinic, setClinic] = useState("SentiMed Central Clinic");
+  const [clinic, setClinic] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
-  const handleAdd = (e) => {
+  const handleAdd = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) return;
-
-    const updated = addDoctor({
-      name: name.trim(),
-      email: email.trim(),
-      specialization,
-      clinic
-    });
-
-    setDoctors(updated);
-    setShowModal(false);
-    setName("");
-    setEmail("");
-    onNotification("Doctor Credentialed", `${name} added to ${clinic}`);
+    if (!email.trim() || (!isRealFirebaseConfigured && !name.trim())) return;
+    setSaving(true);
+    setFormError("");
+    try {
+      const updated = await addAdminDoctor({
+        name: name.trim(),
+        email: email.trim(),
+        specialization,
+        clinic: clinic || clinicOptions[0] || ""
+      });
+      doctorsState.setData(updated);
+      setShowModal(false);
+      setName("");
+      setEmail("");
+      onNotification(
+        "Doctor Credentialed",
+        isRealFirebaseConfigured ? `${email.trim()} now has doctor access. They must sign in again.` : `${name} added.`
+      );
+    } catch (err) {
+      setFormError(describeError(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -151,6 +184,10 @@ export function AdminDoctorMgmtView({ onNotification }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <LoadState loading={doctorsState.loading} error={doctorsState.error} onRetry={doctorsState.reload} label="Loading doctors..." />
+        {!doctorsState.loading && !doctorsState.error && doctors.length === 0 && (
+          <EmptyState icon={Stethoscope} title="No doctors yet" description="Credential a doctor to let patients book and share with them." />
+        )}
         {doctors.map(doc => (
           <div key={doc.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -175,10 +212,17 @@ export function AdminDoctorMgmtView({ onNotification }) {
           <div className="modal-content">
             <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>Credential New Doctor</h2>
             <form onSubmit={handleAdd} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 4 }}>FULL NAME</label>
-                <input type="text" className="input-field" placeholder="e.g. Dr. Emily Vance" value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
+              {isRealFirebaseConfigured ? (
+                <p style={{ fontSize: 12, color: "var(--color-text-muted)", lineHeight: 1.5 }}>
+                  The doctor must first create their own SentiMed account. Enter that account's email to grant doctor access.
+                  Roles are applied server-side and recorded in the audit log.
+                </p>
+              ) : (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 4 }}>FULL NAME</label>
+                  <input type="text" className="input-field" placeholder="e.g. Dr. Emily Vance" value={name} onChange={(e) => setName(e.target.value)} required />
+                </div>
+              )}
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 4 }}>EMAIL</label>
                 <input type="email" className="input-field" placeholder="emily.vance@sentimed.io" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -194,13 +238,16 @@ export function AdminDoctorMgmtView({ onNotification }) {
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 4 }}>ASSIGNED CLINIC</label>
                 <select className="input-field" value={clinic} onChange={(e) => setClinic(e.target.value)}>
-                  <option value="SentiMed Central Clinic">SentiMed Central Clinic</option>
-                  <option value="MindWellness East Clinic">MindWellness East Clinic</option>
+                  {clinicOptions.length === 0 && <option value="">No clinics registered yet</option>}
+                  {clinicOptions.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
                 </select>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+                {formError && <span role="alert" style={{ color: "#C0392B", fontSize: 12, alignSelf: "center", flex: 1 }}>{formError}</span>}
                 <button type="button" onClick={() => setShowModal(false)} className="btn btn-outline">Cancel</button>
-                <button type="submit" className="btn btn-primary">Add Doctor</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Add Doctor"}</button>
               </div>
             </form>
           </div>
@@ -212,27 +259,36 @@ export function AdminDoctorMgmtView({ onNotification }) {
 
 // Admin Clinic Management View
 export function AdminClinicMgmtView({ onNotification }) {
-  const [clinics, setClinics] = useState(() => getAdminClinics());
+  const clinicsState = useAsyncData(listClinics, [], []);
+  const clinics = clinicsState.data || [];
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [contact, setContact] = useState("");
 
-  const handleAdd = (e) => {
+  const handleAdd = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !location.trim()) return;
-
-    const updated = addClinic({
-      name: name.trim(),
-      location: location.trim(),
-      contact: contact.trim() || "+1 (555) 000-0000"
-    });
-
-    setClinics(updated);
-    setShowModal(false);
-    setName("");
-    setLocation("");
-    onNotification("Clinic Registered", `${name} added to platform network.`);
+    if (!name.trim() || !location.trim() || !contact.trim()) {
+      setFormError("Name, location and contact are required.");
+      return;
+    }
+    setSaving(true);
+    setFormError("");
+    try {
+      const updated = await addAdminClinic({ name: name.trim(), location: location.trim(), contact: contact.trim() });
+      clinicsState.setData(updated);
+      setShowModal(false);
+      setName("");
+      setLocation("");
+      setContact("");
+      onNotification("Clinic Registered", `${name} added to platform network.`);
+    } catch (err) {
+      setFormError(describeError(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -249,6 +305,10 @@ export function AdminClinicMgmtView({ onNotification }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <LoadState loading={clinicsState.loading} error={clinicsState.error} onRetry={clinicsState.reload} label="Loading clinics..." />
+        {!clinicsState.loading && !clinicsState.error && clinics.length === 0 && (
+          <EmptyState icon={Building2} title="No clinics registered" description="Register a clinic to assign doctors to it." />
+        )}
         {clinics.map(c => (
           <div key={c.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -284,8 +344,9 @@ export function AdminClinicMgmtView({ onNotification }) {
                 <input type="text" className="input-field" placeholder="+1 (206) 555-0199" value={contact} onChange={(e) => setContact(e.target.value)} />
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+                {formError && <span role="alert" style={{ color: "#C0392B", fontSize: 12, alignSelf: "center", flex: 1 }}>{formError}</span>}
                 <button type="button" onClick={() => setShowModal(false)} className="btn btn-outline">Cancel</button>
-                <button type="submit" className="btn btn-primary">Register Clinic</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Register Clinic"}</button>
               </div>
             </form>
           </div>
@@ -297,7 +358,8 @@ export function AdminClinicMgmtView({ onNotification }) {
 
 // Admin Audit Logs View
 export function AdminAuditLogsView() {
-  const auditLogs = getAuditLogs();
+  const auditState = useAsyncData(listAuditLogs, [], []);
+  const auditLogs = auditState.data || [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -314,6 +376,10 @@ export function AdminAuditLogsView() {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <LoadState loading={auditState.loading} error={auditState.error} onRetry={auditState.reload} label="Loading audit log..." />
+        {!auditState.loading && !auditState.error && auditLogs.length === 0 && (
+          <EmptyState icon={FileText} title="No audit events yet" description="Role changes and administrative actions are recorded here." />
+        )}
         {auditLogs.map((log) => (
           <div key={log.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 16 }}>
             <div>

@@ -89,7 +89,9 @@ export const getAdminDoctors = () => {
   try {
     const saved = localStorage.getItem(DOCTORS_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch {
+    /* localStorage unavailable: fall back to demo data */
+  }
   return INITIAL_DOCTORS;
 };
 
@@ -97,7 +99,9 @@ export const getAdminClinics = () => {
   try {
     const saved = localStorage.getItem(CLINICS_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch {
+    /* localStorage unavailable: fall back to demo data */
+  }
   return INITIAL_CLINICS;
 };
 
@@ -105,7 +109,9 @@ export const getAuditLogs = () => {
   try {
     const saved = localStorage.getItem(AUDIT_LOGS_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch {
+    /* localStorage unavailable: fall back to demo data */
+  }
   return INITIAL_AUDIT_LOGS;
 };
 

@@ -36,7 +36,9 @@ export const getRiskAlerts = () => {
   try {
     const saved = localStorage.getItem(RISK_ALERTS_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch {
+    /* localStorage unavailable: fall back to demo data */
+  }
   return INITIAL_RISK_ALERTS;
 };
 

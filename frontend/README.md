@@ -27,9 +27,9 @@ This repository features two primary systems:
   - Smart search over historic journals with text highlights.
 - **🚨 Red Zone Distress Protocol**:
   - Automatic emergency triggers dispatching notifications to designated contacts and emergency emails.
-- **🔐 Hybrid Core Database Engines**:
-  - Direct sync to **Firebase Authentication, Cloud Firestore, and Analytics**.
-  - Graceful automatic offline local storage sandbox fallback if Firebase is not configured or offline.
+- **🔐 Live and Sandbox modes**:
+  - Live: **Firebase Authentication** in the browser; all data goes through the SentiMed Express API (`../backend`), which verifies the ID token and enforces roles and consent. The browser never accesses Firestore directly.
+  - Sandbox: offline demo with localStorage data when Firebase is not configured.
 
 ---
 
@@ -77,7 +77,7 @@ This project is fully integrated with Firebase. To hook up your own active Fireb
 6. Click on **Firestore Database** in the left sidebar ➔ **Create database** (start in test mode or write rules).
 
 ### Step B: Configure environment variables
-Create a `.env` file in the root directory using the template below:
+Copy `.env.example` to `.env.local` (git-ignored) and fill in the web app config. `VITE_API_BASE_URL` defaults to `/api`, which the Vite dev server proxies to the backend (`VITE_DEV_API_PROXY_TARGET`, default `http://localhost:5000`). Minimum keys:
 ```env
 VITE_FIREBASE_API_KEY=your_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com

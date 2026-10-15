@@ -1,0 +1,21 @@
+# Frontend npm dependency reference.
+# Install these packages with `npm ci` from the frontend directory.
+# This file is not a pip requirements file; package.json/package-lock.json are authoritative.
+
+# Production dependencies
+firebase@^12.13.0
+framer-motion@^13.1.0
+lucide-react@^1.31.0
+react@^19.2.4
+react-dom@^19.2.4
+
+# Development dependencies
+@eslint/js@^9.39.4
+@types/react@^19.2.14
+@types/react-dom@^19.2.3
+@vitejs/plugin-react@^6.0.1
+eslint@^9.39.4
+eslint-plugin-react-hooks@^7.0.1
+eslint-plugin-react-refresh@^0.5.2
+globals@^17.4.0
+vite@^8.0.4

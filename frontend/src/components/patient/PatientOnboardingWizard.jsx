@@ -1,26 +1,31 @@
 import React, { useState } from 'react';
-import { 
-  HeartPulse, 
-  ShieldCheck, 
-  User, 
-  Phone, 
-  Activity, 
-  ArrowRight, 
+import {
+  HeartPulse,
+  ShieldCheck,
+  User,
+  Phone,
+  Activity,
+  ArrowRight,
   ChevronLeft
 } from 'lucide-react';
-import { saveScreeningResult, RISK_LEVELS } from '../../services/screeningService';
-import { createRiskAlert } from '../../services/riskWorkflowService';
-import { dispatchSafetyNotification } from '../../services/notificationService';
+import { submitOnboarding, RISK_LEVELS } from '../../services/screeningService';
+import { isRealFirebaseConfigured } from '../../services/firebase';
+import { describeError } from '../../services/apiClient';
 import { Button } from '../ui';
+
+// Demo defaults only in the offline sandbox
+const demoValue = (value) => (isRealFirebaseConfigured ? "" : value);
 
 export default function PatientOnboardingWizard({ currentUser, initialStep = 1, onComplete, onTriggerUrgentSafety }) {
   const [step, setStep] = useState(initialStep);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const totalSteps = 5;
 
   // Basic Info
-  const [fullName, setFullName] = useState(currentUser?.profile?.name || "Gurnoor Sandhu");
+  const [fullName, setFullName] = useState(currentUser?.profile?.name || demoValue("Gurnoor Sandhu"));
   const [language, setLanguage] = useState("English");
-  const [phone, setPhone] = useState(currentUser?.profile?.mobile || "+1 (555) 234-5678");
+  const [phone, setPhone] = useState(currentUser?.profile?.mobile || demoValue("+1 (555) 234-5678"));
 
   // Emergency Contact
   const [contactName, setContactName] = useState(currentUser?.profile?.emergencyContact?.name || "");
@@ -62,6 +67,11 @@ export default function PatientOnboardingWizard({ currentUser, initialStep = 1, 
   };
 
   const handleSubmitOnboarding = async () => {
+    if (submitting) return;
+    if (!privacyConsent) {
+      setSubmitError("Please accept the privacy and data processing consent to continue.");
+      return;
+    }
     const onboardingData = {
       basicInfo: { fullName, language, phone },
       emergencyContact: { name: contactName, relation: contactRelation, phone: contactPhone },
@@ -69,24 +79,20 @@ export default function PatientOnboardingWizard({ currentUser, initialStep = 1, 
       safetyAnswers: { crisisThoughts, immediateRisk }
     };
 
-    const record = saveScreeningResult(currentUser, onboardingData);
-
-    if (record.riskCategory !== RISK_LEVELS.LOW) {
-      createRiskAlert(record);
-      await dispatchSafetyNotification({
-        recipientType: "DOCTOR",
-        recipientName: "Dr. Sarah Jenkins",
-        riskCategory: record.riskCategory,
-        alertType: record.riskCategory === RISK_LEVELS.HIGH_URGENT ? "URGENT_SAFETY_SCREENING" : "MODERATE_WELLNESS_FLAG"
-      });
-
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const record = await submitOnboarding(currentUser, onboardingData);
       if (record.riskCategory === RISK_LEVELS.HIGH_URGENT) {
         onTriggerUrgentSafety(record);
         return;
       }
+      onComplete(record);
+    } catch (err) {
+      setSubmitError(describeError(err));
+    } finally {
+      setSubmitting(false);
     }
-
-    onComplete(record);
   };
 
   return (
@@ -102,14 +108,14 @@ export default function PatientOnboardingWizard({ currentUser, initialStep = 1, 
 
         {/* Progress Bar */}
         <div style={{ width: "100%", height: 6, background: "#E8EAE8", borderRadius: 6, marginTop: 12, overflow: "hidden" }}>
-          <div 
-            style={{ 
-              width: `${(step / totalSteps) * 100}%`, 
-              height: "100%", 
-              background: "var(--color-primary)", 
+          <div
+            style={{
+              width: `${(step / totalSteps) * 100}%`,
+              height: "100%",
+              background: "var(--color-primary)",
               borderRadius: 6,
-              transition: "width 0.3s ease" 
-            }} 
+              transition: "width 0.3s ease"
+            }}
           />
         </div>
       </div>
@@ -192,10 +198,10 @@ export default function PatientOnboardingWizard({ currentUser, initialStep = 1, 
             </div>
 
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 6 }}>
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 id="emergency-consent"
-                checked={contactConsent} 
+                checked={contactConsent}
                 onChange={(e) => setContactConsent(e.target.checked)}
                 style={{ width: 18, height: 18, marginTop: 2, accentColor: "var(--color-primary)" }}
               />
@@ -216,6 +222,25 @@ export default function PatientOnboardingWizard({ currentUser, initialStep = 1, 
             <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
               Rate your recent experiences over the past 14 days. (Non-diagnostic assessment).
             </p>
+
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>How would you describe your overall mood recently?</label>
+              <select className="input-field" value={moodState} onChange={(e) => setMoodState(e.target.value)}>
+                <option value="stable">Mostly stable</option>
+                <option value="low">Often low or flat</option>
+                <option value="irritable">Often irritable or on edge</option>
+                <option value="variable">Changing a lot from day to day</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>How has your energy been?</label>
+              <select className="input-field" value={energyState} onChange={(e) => setEnergyState(e.target.value)}>
+                <option value="normal">Normal</option>
+                <option value="low">Lower than usual</option>
+                <option value="exhausted">Exhausted most days</option>
+              </select>
+            </div>
 
             <div>
               <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>How has your sleep quality been recently?</label>
@@ -256,11 +281,27 @@ export default function PatientOnboardingWizard({ currentUser, initialStep = 1, 
               </select>
             </div>
 
+            <div style={{ background: "var(--color-bg)", padding: 14, borderRadius: 10, border: "1px solid var(--color-border)" }}>
+              <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>
+                Are you currently in danger or thinking about acting on thoughts of harming yourself?
+              </label>
+              <select className="input-field" value={immediateRisk} onChange={(e) => setImmediateRisk(e.target.value)}>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+              {immediateRisk === "yes" && (
+                <p role="alert" style={{ fontSize: 12, color: "#C0392B", marginTop: 8, lineHeight: 1.4 }}>
+                  Please contact your local emergency number or a crisis line now (e.g. 988 in the US, Tele-MANAS 14416 in India).
+                  Your care team will also be alerted when you complete this step.
+                </p>
+              )}
+            </div>
+
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 8 }}>
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 id="privacy-policy"
-                checked={privacyConsent} 
+                checked={privacyConsent}
                 onChange={(e) => setPrivacyConsent(e.target.checked)}
                 style={{ width: 18, height: 18, marginTop: 2, accentColor: "var(--color-primary)" }}
               />
@@ -279,8 +320,11 @@ export default function PatientOnboardingWizard({ currentUser, initialStep = 1, 
             </Button>
           ) : <div />}
 
-          <Button variant="primary" icon={ArrowRight} onClick={handleNext}>
-            {step === totalSteps ? "Complete Onboarding" : "Continue"}
+          {submitError && (
+            <span role="alert" style={{ color: "#C0392B", fontSize: 13, alignSelf: "center" }}>{submitError}</span>
+          )}
+          <Button variant="primary" icon={ArrowRight} onClick={handleNext} disabled={submitting}>
+            {step === totalSteps ? (submitting ? "Saving..." : "Complete Onboarding") : "Continue"}
           </Button>
         </div>
       </div>

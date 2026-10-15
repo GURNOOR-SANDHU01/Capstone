@@ -1,27 +1,12 @@
 import React from 'react';
 import { Stethoscope, MapPin, Check } from 'lucide-react';
 
-export const AVAILABLE_DOCTORS_DEMO = [
-  {
-    id: "D-201",
-    name: "Dr. Sarah Jenkins",
-    specialization: "Clinical Neuropsychology",
-    clinic: "SentiMed Central Clinic",
-    availability: "Mon, Wed, Fri"
-  },
-  {
-    id: "D-202",
-    name: "Dr. Marcus Vance",
-    specialization: "Behavioral Psychotherapy",
-    clinic: "MindWellness Center",
-    availability: "Tue, Thu, Sat"
-  }
-];
+import { AVAILABLE_DOCTORS_DEMO } from '../../data/mockData';
 
-export function DoctorSelector({ selectedDoctorId, onSelect }) {
+export function DoctorSelector({ selectedDoctorId, onSelect, doctors = AVAILABLE_DOCTORS_DEMO }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {AVAILABLE_DOCTORS_DEMO.map((doc) => {
+      {doctors.map((doc) => {
         const isSelected = selectedDoctorId === doc.id;
         return (
           <div

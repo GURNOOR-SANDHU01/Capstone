@@ -1,21 +1,21 @@
-import { 
-  BarChart3, 
-  BookOpen, 
-  TrendingUp, 
-  Bot, 
-  Stethoscope, 
-  Settings, 
-  ShieldCheck, 
-  ShieldAlert, 
-  Video, 
-  Calendar, 
-  Bell, 
-  History, 
-  Shield, 
-  MessageSquare, 
-  Building2, 
-  FileText, 
-  Users 
+import {
+  BarChart3,
+  BookOpen,
+  TrendingUp,
+  Bot,
+  Stethoscope,
+  Settings,
+  ShieldCheck,
+  ShieldAlert,
+  Video,
+  Calendar,
+  Bell,
+  History,
+  Shield,
+  MessageSquare,
+  Building2,
+  FileText,
+  Users
 } from 'lucide-react';
 import { ROLES } from '../constants/roles';
 
@@ -27,6 +27,7 @@ export const patientNavigation = [
   { id: "insights", label: "Mood & Insights", icon: TrendingUp },
   { id: "appointments", label: "Appointments", icon: Calendar },
   { id: "reminders", label: "Reminders", icon: Bell },
+  { id: "messages", label: "Care Team Messages", icon: MessageSquare },
   { id: "history", label: "Activity History", icon: History },
   { id: "privacy-masking", label: "Privacy & Masking", icon: Shield },
   { id: "profile", label: "Profile & Settings", icon: Settings }

@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// SentiMed / Sentience — Cloud Firestore security rules
+//
+// Architecture: every read and write goes through the Express API, which verifies the
+// Firebase ID token, applies role/consent/ownership checks, and uses the Admin SDK
+// (the Admin SDK is not subject to these rules). Browsers therefore never need direct
+// Firestore access, so clients are denied everywhere.
+//
+// This replaces the earlier draft rules, which (a) let users rewrite their own `role`
+// field and (b) checked therapist bridges by a document-ID format the backend never
+// used. The original draft is kept in the project backups.
+//
+// NOT DEPLOYED. Deploy only with approval:
+//   firebase deploy --only firestore:rules --project sentience-6f40e
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

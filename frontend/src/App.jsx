@@ -15,61 +15,57 @@ import PatientSafetyView from "./components/patient/PatientSafetyView";
 import DoctorSafetyCenterView from "./components/doctor/DoctorSafetyCenterView";
 import AdminSafetyCenterView from "./components/admin/AdminSafetyCenterView";
 
-import { 
-  PatientAppointmentsView, 
+import {
+  PatientAppointmentsView,
   PatientConsultationsView,
-  PatientRemindersView, 
-  PatientHistoryView 
+  PatientRemindersView,
+  PatientHistoryView,
+  PatientMessagingView
 } from "./components/patient/PatientPortalViews";
 
-import { 
-  DoctorDashboardView, 
-  DoctorSharedJournalsView, 
-  DoctorRemindersView, 
+import {
+  DoctorDashboardView,
+  DoctorSharedJournalsView,
+  DoctorRemindersView,
   DoctorMessagingView,
   DoctorAppointmentsView,
   DoctorConsultationsView
 } from "./components/doctor/DoctorPortalViews";
 
-import { 
-  AdminDashboardView, 
-  AdminDoctorMgmtView, 
-  AdminClinicMgmtView, 
-  AdminAuditLogsView 
+import {
+  AdminDashboardView,
+  AdminDoctorMgmtView,
+  AdminClinicMgmtView,
+  AdminAuditLogsView
 } from "./components/admin/AdminPortalViews";
 
 import { ROLES } from "./constants/roles";
-import { getJournalEntries } from "./services/journalService";
 import { useAuth } from "./hooks/useAuth";
+import { useJournal } from "./hooks/useJournal";
 import { useProfileCompletion } from "./hooks/useProfileCompletion";
 import "./App.css";
 
 function App() {
-  const { currentUser, setCurrentUser, authInitialized, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState("dashboard");
-  
+  const { currentUser, setCurrentUser, authInitialized, authError, logout } = useAuth();
+  // Tab state is remembered per signed-in user; profile updates do not reset navigation
+  const [tabState, setTabState] = useState({ uid: null, tab: null });
+
   // Safety Alert State
   const [urgentSafetyAlert, setUrgentSafetyAlert] = useState(null);
 
-  const [entries, setEntries] = useState(() => getJournalEntries());
+  const journal = useJournal(currentUser);
+  const entries = journal.entries;
   const [wearableConnected, setWearableConnected] = useState(true);
   const [activeAlert, setActiveAlert] = useState(null);
 
   // Authoritative Profile Completion evaluation
   const { isComplete, firstMissingStep } = useProfileCompletion(currentUser);
 
-  // Set default tab on user authentication
-  useEffect(() => {
-    if (currentUser) {
-      if (currentUser.role === ROLES.ADMIN) {
-        setActiveTab("admin-dashboard");
-      } else if (currentUser.role === ROLES.DOCTOR) {
-        setActiveTab("doctor-dashboard");
-      } else {
-        setActiveTab("dashboard");
-      }
-    }
-  }, [currentUser]);
+  const defaultTabFor = (role) =>
+    role === ROLES.ADMIN ? "admin-dashboard" : role === ROLES.DOCTOR ? "doctor-dashboard" : "dashboard";
+  const activeTab =
+    currentUser && tabState.uid === currentUser.uid && tabState.tab ? tabState.tab : defaultTabFor(currentUser?.role);
+  const setActiveTab = (tab) => setTabState({ uid: currentUser?.uid ?? null, tab });
 
   // Dismiss notification toast after delay
   useEffect(() => {
@@ -105,15 +101,11 @@ function App() {
       <div style={{ minHeight: "100vh", background: "var(--color-bg)", display: "flex", flexDirection: "column" }}>
         <main style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
           <AuthPortal
+            key={authError || "auth"}
+            initialError={authError}
             onAuthSuccess={(user) => {
               setCurrentUser(user);
-              if (user.role === ROLES.ADMIN) {
-                setActiveTab("admin-dashboard");
-              } else if (user.role === ROLES.DOCTOR) {
-                setActiveTab("doctor-dashboard");
-              } else {
-                setActiveTab("dashboard");
-              }
+              setTabState({ uid: user.uid, tab: defaultTabFor(user.role) });
             }}
             onNotification={handleTriggerNotification}
           />
@@ -131,12 +123,12 @@ function App() {
         <PatientOnboardingWizard
           currentUser={currentUser}
           initialStep={firstMissingStep}
-          onComplete={() => {
-            setCurrentUser({ ...currentUser });
+          onComplete={(record) => {
+            setCurrentUser(record?.user || { ...currentUser });
             handleTriggerNotification("Profile Completed", "Welcome to your SentiMed dashboard.");
           }}
           onTriggerUrgentSafety={(record) => {
-            setCurrentUser({ ...currentUser });
+            setCurrentUser(record?.user || { ...currentUser });
             setUrgentSafetyAlert(record);
           }}
         />
@@ -186,13 +178,20 @@ function App() {
           {activeTab === "journal" && (
             <JournalView
               entries={entries}
-              setEntries={setEntries}
+              loading={journal.loading}
+              error={journal.error}
+              onReload={journal.reload}
+              onAdd={journal.addEntry}
+              onDelete={journal.removeEntry}
+              onSetVisibility={journal.setVisibility}
+              onEdit={journal.editEntry}
               onNotification={handleTriggerNotification}
             />
           )}
-          {activeTab === "insights" && <InsightsView entries={entries} />}
+          {activeTab === "insights" && <InsightsView entries={entries} onNotification={handleTriggerNotification} />}
           {activeTab === "reminders" && <PatientRemindersView />}
-          {activeTab === "history" && <PatientHistoryView />}
+          {activeTab === "messages" && <PatientMessagingView onNotification={handleTriggerNotification} />}
+          {activeTab === "history" && <PatientHistoryView entries={entries} />}
           {activeTab === "privacy-masking" && <PiiMaskingView />}
         </>
       )}
@@ -222,7 +221,7 @@ function App() {
           {activeTab === "doctor-reminders" && (
             <DoctorRemindersView onNotification={handleTriggerNotification} />
           )}
-          {activeTab === "doctor-messaging" && <DoctorMessagingView />}
+          {activeTab === "doctor-messaging" && <DoctorMessagingView onNotification={handleTriggerNotification} />}
         </>
       )}
 
@@ -232,7 +231,7 @@ function App() {
           {activeTab === "admin-dashboard" && (
             <AdminDashboardView onNavigate={(tab) => setActiveTab(tab)} />
           )}
-          {activeTab === "admin-safety" && <AdminSafetyCenterView />}
+          {activeTab === "admin-safety" && <AdminSafetyCenterView onNotification={handleTriggerNotification} />}
           {activeTab === "admin-doctors" && (
             <AdminDoctorMgmtView onNotification={handleTriggerNotification} />
           )}
@@ -247,6 +246,7 @@ function App() {
       {activeTab === "profile" && (
         <ProfileView
           currentUser={currentUser}
+          onProfileUpdated={setCurrentUser}
           wearableConnected={wearableConnected}
           setWearableConnected={setWearableConnected}
           onNotification={handleTriggerNotification}

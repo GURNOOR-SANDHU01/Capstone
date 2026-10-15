@@ -1,22 +1,25 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Bot, 
-  User, 
-  Send, 
-  Sparkles, 
-  Lightbulb, 
-  Loader2 
+import {
+  Bot,
+  User,
+  Send,
+  Sparkles,
+  Lightbulb,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AI_SUGGESTED_PROMPTS } from '../../data/mockData';
-import { generateCompanionReply } from '../../services/companionService';
+import { getCompanionReply } from '../../services/companionService';
+import { describeError } from '../../services/apiClient';
+import { useDraftState } from '../../hooks/useDraftState';
 import { PageTransition } from '../animations';
 import { Button } from '../ui';
 
 export default function CompanionView({ currentUser }) {
   const userName = currentUser?.profile?.name ? currentUser.profile.name.split(" ")[0] : "there";
-  
-  const [messages, setMessages] = useState([
+
+  // The conversation survives switching screens during this session (in-memory only, never stored)
+  const [messages, setMessages] = useDraftState("companion.messages", [
     {
       id: "msg-1",
       sender: "ai",
@@ -25,7 +28,7 @@ export default function CompanionView({ currentUser }) {
     }
   ]);
 
-  const [input, setInput] = useState("");
+  const [input, setInput] = useDraftState("companion.input", "");
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef(null);
 
@@ -49,7 +52,7 @@ export default function CompanionView({ currentUser }) {
     setIsTyping(true);
 
     try {
-      const replyText = await generateCompanionReply(query);
+      const replyText = await getCompanionReply(query);
       const aiMsg = {
         id: `msg-ai-${Date.now()}`,
         sender: "ai",
@@ -58,7 +61,16 @@ export default function CompanionView({ currentUser }) {
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
-      console.error("AI reply error:", err);
+      // Show the failure in the conversation instead of silently dropping the reply
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-err-${Date.now()}`,
+          sender: "ai",
+          text: `I could not respond just now: ${describeError(err)}`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
     } finally {
       setIsTyping(false);
     }
@@ -83,14 +95,14 @@ export default function CompanionView({ currentUser }) {
         </div>
 
         {/* Chat Main Window */}
-        <div 
-          className="card" 
-          style={{ 
-            flex: 1, 
-            display: "flex", 
-            flexDirection: "column", 
-            padding: 24, 
-            overflowY: "auto", 
+        <div
+          className="card"
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            padding: 24,
+            overflowY: "auto",
             gap: 16,
             background: "var(--color-surface)"
           }}

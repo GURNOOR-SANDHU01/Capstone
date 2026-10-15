@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock } from 'lucide-react';
 
-export const TIME_SLOTS_DEMO = [
+const TIME_SLOTS_DEMO = [
   "09:00 AM",
   "10:30 AM",
   "01:30 PM",

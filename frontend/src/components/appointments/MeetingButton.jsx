@@ -4,11 +4,11 @@ import { Button } from '../ui/Button';
 
 /**
  * Reusable MeetingButton Component
- * Renders an authorized Google Meet join link opening securely in a new tab.
+ * Renders the appointment's video call join link, opening in a new tab.
  * Displays "Meeting link unavailable" when no URL exists.
  */
-export function MeetingButton({ 
-  meetingUrl, 
+export function MeetingButton({
+  meetingUrl,
   provider = "google-meet",
   size = "md",
   disabled = false,
@@ -17,9 +17,9 @@ export function MeetingButton({
 }) {
   if (!meetingUrl) {
     return (
-      <Button 
-        variant="ghost" 
-        size={size} 
+      <Button
+        variant="ghost"
+        size={size}
         disabled={true}
         style={{ opacity: 0.6, cursor: "not-allowed", ...style }}
         className={className}
@@ -44,7 +44,7 @@ export function MeetingButton({
         style={{ ...style }}
         className={className}
       >
-        <span>Join Google Meet</span>
+        <span>{provider === "jitsi" ? "Join Video Call" : "Join Google Meet"}</span>
         <ExternalLink size={14} style={{ marginLeft: 4 }} />
       </Button>
     </a>

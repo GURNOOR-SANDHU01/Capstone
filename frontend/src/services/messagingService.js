@@ -25,7 +25,9 @@ export const getMessages = () => {
   try {
     const saved = localStorage.getItem(MESSAGES_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch {
+    /* localStorage unavailable: fall back to demo data */
+  }
   return INITIAL_MESSAGES;
 };
 
@@ -41,6 +43,8 @@ export const sendMessage = (senderRole, senderName, text) => {
   const updated = [...current, created];
   try {
     localStorage.setItem(MESSAGES_KEY, JSON.stringify(updated));
-  } catch {}
+  } catch {
+    /* localStorage unavailable: fall back to demo data */
+  }
   return updated;
 };

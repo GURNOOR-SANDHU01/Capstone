@@ -3,13 +3,14 @@ import { LogOut, ShieldCheck, Menu, X } from 'lucide-react';
 import { ROLES } from '../constants/roles';
 import { getNavigationForRole } from '../config/navigationConfig';
 import { Button, Badge } from './ui';
+import { isRealFirebaseConfigured } from '../services/firebase';
 
-export default function AppShell({ 
-  children, 
-  activeTab, 
-  setActiveTab, 
-  currentUser, 
-  onLogout 
+export default function AppShell({
+  children,
+  activeTab,
+  setActiveTab,
+  currentUser,
+  onLogout
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const userRole = currentUser?.role || ROLES.PATIENT;
@@ -68,9 +69,9 @@ export default function AppShell({
             <span style={{ fontSize: 11, color: "rgba(255, 255, 255, 0.6)" }}>{userRoleLabel}</span>
           </div>
 
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             icon={LogOut}
             onClick={onLogout}
             style={{ borderColor: "rgba(255,255,255,0.2)", color: "#FFFFFF" }}
@@ -126,20 +127,20 @@ export default function AppShell({
             })}
           </nav>
 
-          <div 
-            style={{ 
-              padding: 12, 
-              background: "var(--color-bg)", 
-              borderRadius: "var(--radius-sm)", 
+          <div
+            style={{
+              padding: 12,
+              background: "var(--color-bg)",
+              borderRadius: "var(--radius-sm)",
               border: "1px solid var(--color-border)",
               fontSize: 11,
               color: "var(--color-text-muted)"
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, color: "var(--color-primary-dark)", marginBottom: 4 }}>
-              <ShieldCheck size={14} /> Encrypted Sandbox
+              <ShieldCheck size={14} /> {isRealFirebaseConfigured ? "Secure Live Session" : "Encrypted Sandbox"}
             </div>
-            <div>HIPAA-compliant multi-role security boundaries active.</div>
+            <div>{isRealFirebaseConfigured ? "Role and consent checks are enforced by the server." : "Offline demo data stored in this browser only."}</div>
           </div>
         </aside>
 

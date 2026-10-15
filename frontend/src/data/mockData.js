@@ -138,3 +138,20 @@ export const AI_SUGGESTED_PROMPTS = [
   "Help me reframe an anxious thought",
   "Give me a short 2-minute mindfulness exercise"
 ];
+
+export const AVAILABLE_DOCTORS_DEMO = [
+  {
+    id: "D-201",
+    name: "Dr. Sarah Jenkins",
+    specialization: "Clinical Neuropsychology",
+    clinic: "SentiMed Central Clinic",
+    availability: "Mon, Wed, Fri"
+  },
+  {
+    id: "D-202",
+    name: "Dr. Marcus Vance",
+    specialization: "Behavioral Psychotherapy",
+    clinic: "MindWellness Center",
+    availability: "Tue, Thu, Sat"
+  }
+];

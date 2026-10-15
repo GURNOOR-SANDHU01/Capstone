@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
 import { Video, Building, AlertCircle, User, MapPin } from 'lucide-react';
-import { Drawer, Button } from '../ui';
+import { Drawer, Button, LoadState } from '../ui';
+import { listMyPatients } from '../../services/clinicalApi';
+import { describeError } from '../../services/apiClient';
+import { useAsyncData } from '../../hooks/useAsyncData';
 import { TimeSlotSelector } from './TimeSlotSelector';
 
 export function DoctorScheduleDrawer({ open, onClose, onSubmit }) {
-  const [patientName, setPatientName] = useState("Gurnoor Sandhu");
-  const [patientId, setPatientId] = useState("P-0041");
-  const [clinicName, setClinicName] = useState("SentiMed Central Clinic");
+  const roster = useAsyncData(listMyPatients, [], []);
+  const patients = roster.data || [];
+  const [patientId, setPatientId] = useState("");
+  const selectedPatientId = patientId || patients[0]?.id || "";
+  const patientName = patients.find((p) => p.id === selectedPatientId)?.name || "";
+  const [clinicName, setClinicName] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const todayISO = new Date().toISOString().split('T')[0];
   const [date, setDate] = useState(todayISO);
   const [time, setTime] = useState("10:30 AM");
@@ -27,45 +34,49 @@ export function DoctorScheduleDrawer({ open, onClose, onSubmit }) {
     if (!date) {
       errs.date = "Please select a valid date.";
     }
+    if (!selectedPatientId) {
+      errs.patient = "Select a consenting patient.";
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (!validate() || isSubmitting) return;
 
     setIsSubmitting(true);
-
-    onSubmit({
-      doctorId: "D-201",
-      doctorName: "Dr. Sarah Jenkins",
-      specialization: "Clinical Neuropsychology",
-      patientName,
-      patientId,
-      clinicName,
-      date,
-      time,
-      type,
-      reason: reason.trim(),
-      notes: notes.trim(),
-      meetingProvider: "google-meet",
-      meetingUrl: "https://meet.google.com/demo-sentimed-call"
-    });
-
-    setIsSubmitting(false);
-    setReason("");
-    setNotes("");
-    onClose();
+    setSubmitError("");
+    try {
+      // The doctor's identity and the meeting link are set by the server
+      await onSubmit({
+        patientName,
+        patientId: selectedPatientId,
+        clinicName: clinicName.trim(),
+        date,
+        time,
+        type,
+        reason: reason.trim(),
+        notes: notes.trim()
+      });
+      setReason("");
+      setNotes("");
+      onClose();
+    } catch (err) {
+      setSubmitError(describeError(err));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const footerActions = (
     <>
+      {submitError && <span role="alert" style={{ color: "#C0392B", fontSize: 12, flex: 1 }}>{submitError}</span>}
       <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
         Cancel
       </Button>
-      <Button 
-        variant="primary" 
+      <Button
+        variant="primary"
         onClick={handleSubmit}
         loading={isSubmitting}
         disabled={isSubmitting}
@@ -91,18 +102,17 @@ export function DoctorScheduleDrawer({ open, onClose, onSubmit }) {
           <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 6 }}>
             1. SELECT AUTHORIZED PATIENT
           </label>
-          <select 
-            className="input-field" 
-            value={patientName} 
-            onChange={(e) => {
-              const val = e.target.value;
-              setPatientName(val);
-              setPatientId(val.includes("B") ? "P-0039" : "P-0041");
-            }}
-          >
-            <option value="Gurnoor Sandhu">Gurnoor Sandhu (P-0041)</option>
-            <option value="Patient B (Anonymized)">Patient B (P-0039)</option>
-          </select>
+          <LoadState loading={roster.loading} error={roster.error} onRetry={roster.reload} label="Loading patients..." />
+          {!roster.loading && !roster.error && patients.length === 0 ? (
+            <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>No patients currently consent to your care.</p>
+          ) : (
+            <select className="input-field" value={selectedPatientId} onChange={(e) => setPatientId(e.target.value)}>
+              {patients.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          )}
+          {errors.patient && <div style={{ color: "var(--color-danger)", fontSize: 12, marginTop: 4 }}>{errors.patient}</div>}
         </div>
 
         {/* 2. CLINIC LOCATION */}
@@ -110,12 +120,12 @@ export function DoctorScheduleDrawer({ open, onClose, onSubmit }) {
           <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 6 }}>
             2. CLINIC LOCATION
           </label>
-          <input 
-            type="text" 
-            className="input-field" 
-            value={clinicName} 
-            onChange={(e) => setClinicName(e.target.value)} 
-            required 
+          <input
+            type="text"
+            className="input-field"
+            value={clinicName}
+            placeholder="Optional — defaults to your clinic"
+            onChange={(e) => setClinicName(e.target.value)}
           />
         </div>
 
@@ -124,16 +134,16 @@ export function DoctorScheduleDrawer({ open, onClose, onSubmit }) {
           <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 6 }}>
             3. CONSULTATION DATE
           </label>
-          <input 
-            type="date" 
-            className="input-field" 
-            value={date} 
+          <input
+            type="date"
+            className="input-field"
+            value={date}
             min={todayISO}
             onChange={(e) => {
               setDate(e.target.value);
               if (errors.date) setErrors({ ...errors, date: null });
-            }} 
-            required 
+            }}
+            required
           />
           {errors.date && <div style={{ color: "var(--color-danger)", fontSize: 12, marginTop: 4 }}>{errors.date}</div>}
         </div>

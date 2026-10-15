@@ -1,21 +1,40 @@
-import React from 'react';
-import { 
-  TrendingUp, 
-  Sun, 
-  Zap, 
-  Users, 
-  Info, 
-  Activity, 
+import React, { useState } from 'react';
+import {
+  TrendingUp,
+  Sun,
+  Zap,
+  Users,
+  Info,
+  Activity,
   Award,
   ShieldCheck
 } from 'lucide-react';
 import MoodChart from '../MoodChart';
 import SentimentBar from '../SentimentBar';
-import { calculateWellnessStats, getWeeklyChartData } from '../../services/insightService';
+import { calculateWellnessStats, getWeeklyChartData, findTagPatterns, findWeekdayPattern } from '../../services/insightService';
+import { listMemories, sendMemoryFeedback } from '../../services/clinicalApi';
+import { isRealFirebaseConfigured } from '../../services/firebase';
+import { describeError } from '../../services/apiClient';
+import { useAsyncData } from '../../hooks/useAsyncData';
+import { LoadState } from '../ui';
 
-export default function InsightsView({ entries = [] }) {
+export default function InsightsView({ entries = [], onNotification }) {
   const stats = calculateWellnessStats(entries);
   const chartData = getWeeklyChartData(entries);
+  const tagPatterns = findTagPatterns(entries);
+  const weekdayPattern = findWeekdayPattern(entries);
+  const memories = useAsyncData(listMemories, [entries.length], []);
+  const [feedbackGiven, setFeedbackGiven] = useState({});
+
+  const giveFeedback = async (memory, feedback) => {
+    try {
+      const importance = await sendMemoryFeedback(memory.id, feedback);
+      setFeedbackGiven((prev) => ({ ...prev, [memory.id]: feedback }));
+      memories.setData((prev) => (prev || []).map((m) => (m.id === memory.id ? { ...m, importance } : m)));
+    } catch (err) {
+      onNotification && onNotification("Feedback Not Saved", describeError(err));
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -37,7 +56,9 @@ export default function InsightsView({ entries = [] }) {
           <div style={{ fontSize: 28, fontWeight: 800, color: "var(--color-primary-dark)", marginTop: 4 }}>
             {stats.averageSentiment}%
           </div>
-          <span className="badge badge-primary" style={{ marginTop: 8 }}>+14% vs last 30 days</span>
+          <span className="badge badge-primary" style={{ marginTop: 8 }}>
+            {stats.weeklyComparison === "—" ? "Not enough history for a weekly trend" : `${stats.weeklyComparison} vs previous 7 days`}
+          </span>
         </div>
 
         <div className="card">
@@ -79,8 +100,16 @@ export default function InsightsView({ entries = [] }) {
               Correlation between text analysis, voice pitch variance, and facial micro-expression telemetry.
             </p>
             <SentimentBar value={stats.averageSentiment} label="Textual NLP Processing" />
-            <SentimentBar value={Math.min(100, stats.averageSentiment + 3)} label="Vocal Prosody & Tone" />
-            <SentimentBar value={Math.max(0, stats.averageSentiment - 4)} label="Facial Biomarker Analysis" />
+            {stats.voiceAverage !== null ? (
+              <SentimentBar value={stats.voiceAverage} label="Vocal Prosody & Tone" />
+            ) : (
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Vocal Prosody & Tone: no voice entries yet.</p>
+            )}
+            {stats.videoAverage !== null ? (
+              <SentimentBar value={stats.videoAverage} label="Facial Biomarker Analysis" />
+            ) : (
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Facial Biomarker Analysis: no video entries yet.</p>
+            )}
           </div>
         </div>
 
@@ -88,46 +117,84 @@ export default function InsightsView({ entries = [] }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700 }}>Observed Emotional Patterns</h3>
+            <p style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: -8 }}>Computed from your own entries and tags.</p>
 
-            <div style={{ background: "var(--color-primary-soft)", padding: 14, borderRadius: "var(--radius-sm)", border: "1px solid rgba(76,175,145,0.2)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--color-primary-dark)" }}>
-                <Sun size={16} />
-                <span>Morning Energy Lift</span>
-              </div>
-              <p style={{ fontSize: 12, color: "var(--color-text)", marginTop: 4 }}>
-                Your sentiment scores average 18% higher during morning walks compared to late-evening work reflections.
+            {tagPatterns.length === 0 && !weekdayPattern && (
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+                Patterns appear once you have a few entries with recurring tags (at least two entries per tag).
               </p>
-            </div>
+            )}
 
-            <div style={{ background: "var(--color-warning-soft)", padding: 14, borderRadius: "var(--radius-sm)", border: "1px solid rgba(245,166,35,0.2)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "#B8690A" }}>
-                <Zap size={16} />
-                <span>Mid-Week Stress Dip</span>
+            {tagPatterns.map((p) => (
+              <div
+                key={p.tag}
+                style={{
+                  background: p.delta > 0 ? "var(--color-primary-soft)" : "var(--color-warning-soft)",
+                  padding: 14,
+                  borderRadius: "var(--radius-sm)",
+                  border: `1px solid ${p.delta > 0 ? "rgba(76,175,145,0.2)" : "rgba(245,166,35,0.2)"}`
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: p.delta > 0 ? "var(--color-primary-dark)" : "#B8690A" }}>
+                  {p.delta > 0 ? <Sun size={16} /> : <Zap size={16} />}
+                  <span>#{p.tag}</span>
+                </div>
+                <p style={{ fontSize: 12, color: "var(--color-text)", marginTop: 4 }}>
+                  Entries tagged #{p.tag} average {p.average}% sentiment, {Math.abs(p.delta)} points {p.delta > 0 ? "above" : "below"} your overall average ({p.count} entries).
+                </p>
               </div>
-              <p style={{ fontSize: 12, color: "var(--color-text)", marginTop: 4 }}>
-                Anxiety keywords tend to cluster on Wednesday evenings before major project deliverables.
-              </p>
-            </div>
+            ))}
 
-            <div style={{ background: "var(--color-bg)", padding: 14, borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--color-text)" }}>
-                <Users size={16} />
-                <span>Social Connection Impact</span>
+            {weekdayPattern && (
+              <div style={{ background: "var(--color-bg)", padding: 14, borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--color-text)" }}>
+                  <Users size={16} />
+                  <span>{weekdayPattern.day} Dip</span>
+                </div>
+                <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
+                  Your {weekdayPattern.day} entries average {weekdayPattern.average}%, below your overall {weekdayPattern.overall}%.
+                </p>
               </div>
-              <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
-                Entries tagged with family or connection correlate with 90%+ positive sentiment reflections.
-              </p>
-            </div>
+            )}
           </div>
+
+          {isRealFirebaseConfigured && (
+            <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700 }}>Remembered Patterns</h3>
+              <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+                Extracted from your journal by the analysis service. Tell us whether each one fits — it adjusts how much weight it gets.
+              </p>
+              <LoadState loading={memories.loading} error={memories.error} onRetry={memories.reload} label="Loading patterns..." />
+              {!memories.loading && !memories.error && (memories.data || []).length === 0 && (
+                <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>No patterns remembered yet.</p>
+              )}
+              {(memories.data || []).map((m) => (
+                <div key={m.id} style={{ padding: 12, background: "var(--color-bg)", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ fontSize: 13 }}>{m.text}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>Relevance {m.importance}%</span>
+                    {feedbackGiven[m.id] ? (
+                      <span className="badge badge-primary">Thanks — marked "{feedbackGiven[m.id]}"</span>
+                    ) : (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button type="button" className="btn btn-outline btn-sm" onClick={() => giveFeedback(m, "agree")}>Fits me</button>
+                        <button type="button" className="btn btn-outline btn-sm" onClick={() => giveFeedback(m, "disagree")}>Doesn't fit</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Wellness Disclaimer Banner */}
-      <div 
-        style={{ 
-          background: "var(--color-bg)", 
-          border: "1px solid var(--color-border)", 
-          padding: 16, 
+      <div
+        style={{
+          background: "var(--color-bg)",
+          border: "1px solid var(--color-border)",
+          padding: 16,
           borderRadius: "var(--radius-sm)",
           fontSize: 12,
           color: "var(--color-text-muted)",

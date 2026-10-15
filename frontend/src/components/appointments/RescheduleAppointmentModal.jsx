@@ -1,22 +1,30 @@
 import React, { useState } from 'react';
 import { Modal, Button } from '../ui';
 
-export function RescheduleAppointmentModal({ 
-  isOpen, 
-  onClose, 
-  appointment, 
-  onSubmit 
+export function RescheduleAppointmentModal({
+  isOpen,
+  onClose,
+  appointment,
+  onSubmit
 }) {
-  const [newDate, setNewDate] = useState("2026-08-21");
+  const tomorrowISO = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const [newDate, setNewDate] = useState(tomorrowISO);
+  const [saving, setSaving] = useState(false);
   const [newTime, setNewTime] = useState("03:00 PM");
   const [note, setNote] = useState("Please let me know if this proposed time works for you.");
 
   if (!appointment) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit(appointment.id, newDate, newTime, note.trim());
-    onClose();
+    if (saving) return;
+    setSaving(true);
+    try {
+      const ok = await onSubmit(appointment.id, newDate, newTime, note.trim());
+      if (ok !== false) onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

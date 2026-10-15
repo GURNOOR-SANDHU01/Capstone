@@ -6,10 +6,7 @@ export function AnimatedNumber({ value = 0, duration = 750, suffix = "" }) {
   const [displayValue, setDisplayValue] = useState(shouldReduceMotion ? value : 0);
 
   useEffect(() => {
-    if (shouldReduceMotion) {
-      setDisplayValue(value);
-      return;
-    }
+    if (shouldReduceMotion) return undefined;
 
     let startTime = null;
     const startNum = 0;
@@ -33,5 +30,5 @@ export function AnimatedNumber({ value = 0, duration = 750, suffix = "" }) {
     return () => cancelAnimationFrame(rafId);
   }, [value, duration, shouldReduceMotion]);
 
-  return <span>{displayValue}{suffix}</span>;
+  return <span>{shouldReduceMotion ? value : displayValue}{suffix}</span>;
 }

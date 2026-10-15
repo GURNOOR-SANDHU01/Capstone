@@ -1,11 +1,11 @@
 import React from 'react';
-import { 
-  PenSquare, 
-  Bot, 
-  TrendingUp, 
-  Sparkles, 
-  Clock, 
-  Activity, 
+import {
+  PenSquare,
+  Bot,
+  TrendingUp,
+  Sparkles,
+  Clock,
+  Activity,
   ArrowRight,
   ShieldCheck
 } from 'lucide-react';
@@ -22,17 +22,17 @@ export default function DashboardView({ entries = [], onNavigate, currentUser })
 
   const userName = currentUser?.profile?.name ? currentUser.profile.name.split(" ")[0] : "Friend";
   const recentEntries = entries.slice(0, 3);
-  const latestEntry = entries[0] || { mood: "Calm", sentiment: 72 };
+  const latestEntry = entries[0] || null;
 
   return (
     <PageTransition>
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         {/* Banner */}
-        <div 
-          className="card" 
-          style={{ 
-            background: "linear-gradient(135deg, #1A1A2E 0%, #2E7D62 100%)", 
-            color: "#FFFFFF", 
+        <div
+          className="card"
+          style={{
+            background: "linear-gradient(135deg, #1A1A2E 0%, #2E7D62 100%)",
+            color: "#FFFFFF",
             padding: "32px 28px",
             display: "flex",
             justifyContent: "space-between",
@@ -42,12 +42,12 @@ export default function DashboardView({ entries = [], onNavigate, currentUser })
           }}
         >
           <div>
-            <span 
-              style={{ 
-                fontSize: 11, 
-                fontWeight: 700, 
-                textTransform: "uppercase", 
-                letterSpacing: "1px", 
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "1px",
                 color: "var(--color-primary)",
                 display: "inline-flex",
                 alignItems: "center",
@@ -104,9 +104,11 @@ export default function DashboardView({ entries = [], onNavigate, currentUser })
             <div className="card">
               <span style={{ fontSize: 12, color: "var(--color-text-muted)", fontWeight: 700 }}>PRIMARY MOOD STATE</span>
               <div style={{ fontSize: 24, fontWeight: 800, color: "var(--color-primary-dark)", marginTop: 8 }}>
-                {latestEntry.mood}
+                {latestEntry ? latestEntry.mood : "—"}
               </div>
-              <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Last updated today</span>
+              <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+                {latestEntry ? `From your entry ${latestEntry.date}` : "Write a journal entry to start tracking"}
+              </span>
             </div>
           </StaggerItem>
         </StaggerContainer>
@@ -126,6 +128,11 @@ export default function DashboardView({ entries = [], onNavigate, currentUser })
             </div>
 
             <MoodChart data={chartData} height={220} />
+            {stats.totalEntries === 0 && (
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)", margin: 0 }}>
+                Your weekly trend appears here after your first journal entries.
+              </p>
+            )}
           </div>
 
           {/* Right Column: Recent Activity Feed */}
@@ -136,6 +143,9 @@ export default function DashboardView({ entries = [], onNavigate, currentUser })
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {recentEntries.length === 0 && (
+                <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>No journal entries yet.</p>
+              )}
               {recentEntries.map((e) => (
                 <div key={e.id} style={{ background: "var(--color-bg)", padding: 12, borderRadius: "var(--radius-sm)", display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>

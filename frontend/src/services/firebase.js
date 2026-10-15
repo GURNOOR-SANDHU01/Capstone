@@ -1,19 +1,17 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
-import { 
-  getAuth, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
-  signInWithPopup, 
-  GoogleAuthProvider 
+import {
+  getAuth,
+  connectAuthEmulator,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile as updateAuthProfile,
+  signOut,
+  signInWithPopup,
+  GoogleAuthProvider
 } from "firebase/auth";
-import { 
-  getFirestore, 
-  doc, 
-  setDoc, 
-  getDoc 
-} from "firebase/firestore";
+import { api } from "./apiClient";
+import { clearDrafts } from "../hooks/useDraftState";
 
 // Read Firebase configuration from Vite environment variables
 const firebaseConfig = {
@@ -26,9 +24,12 @@ const firebaseConfig = {
   measurementId: import.meta.env?.VITE_FIREBASE_MEASUREMENT_ID || ""
 };
 
+// Optional: point Firebase Auth at the local emulator (e.g. "127.0.0.1:9099") for end-to-end tests
+const authEmulatorHost = import.meta.env?.VITE_FIREBASE_AUTH_EMULATOR_HOST || "";
+
 // Real Firebase is active ONLY if explicit VITE_FIREBASE_API_KEY is provided and forceSandbox is false
-const isRealConfigured = 
-  Boolean(firebaseConfig.apiKey) && 
+const isRealConfigured =
+  Boolean(firebaseConfig.apiKey) &&
   firebaseConfig.apiKey !== "YOUR_FIREBASE_API_KEY" &&
   firebaseConfig.apiKey.trim() !== "";
 
@@ -39,6 +40,10 @@ try {
   console.warn("Sandbox state not readable:", err);
 }
 
+/**
+ * Live mode: Firebase Authentication in the browser + all data through the Express API.
+ * Sandbox mode: offline demo with localStorage-only data (no backend, no Firebase).
+ */
 export const isRealFirebaseConfigured = isRealConfigured && !forceSandbox;
 
 export const setForceSandbox = (val) => {
@@ -52,27 +57,101 @@ export const setForceSandbox = (val) => {
 
 export let app = null;
 export let auth = null;
-export let db = null;
 export let googleProvider = null;
 
 if (isRealFirebaseConfigured) {
   try {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     auth = getAuth(app);
-    db = getFirestore(app);
+    if (authEmulatorHost) {
+      connectAuthEmulator(auth, `http://${authEmulatorHost}`, { disableWarnings: true });
+    }
     googleProvider = new GoogleAuthProvider();
   } catch (error) {
     console.warn("Firebase initialization failed; falling back to Sandbox mode:", error);
   }
 }
 
-// Lazy Analytics Initialization (Non-blocking)
+// Lazy Analytics Initialization (Non-blocking, never against the emulator)
 export const initAnalyticsLazy = () => {
-  if (isRealFirebaseConfigured && app && typeof window !== "undefined") {
+  if (isRealFirebaseConfigured && app && !authEmulatorHost && firebaseConfig.measurementId && typeof window !== "undefined") {
     try {
       getAnalytics(app);
-    } catch {}
+    } catch (err) {
+      console.debug("Analytics unavailable:", err?.message);
+    }
   }
+};
+
+/* ------------------------------------------------------------------ */
+/* Live mode: profile + role come from the backend, never from the UI */
+/* ------------------------------------------------------------------ */
+
+const ONBOARDING_SECTION_MAP = {
+  basic_info: "basicInfo",
+  emergency_contact: "emergencyContact",
+  wellness_screening: "wellnessScreening",
+  safety_screening: "safetyScreening",
+  privacy_consent: "privacyConsent"
+};
+
+/**
+ * Converts the backend profile (GET /api/users/me) into the user object the UI already uses:
+ * { uid, email, role, profile: { name, mobile, emergencyContact, completionState, ... } }.
+ * `role` is the verified custom claim returned by the backend.
+ */
+export const toAppUser = (firebaseUser, backendProfile) => {
+  const p = backendProfile || {};
+  const onboarding = p.onboarding || {};
+  const sections = {};
+  Object.entries(ONBOARDING_SECTION_MAP).forEach(([snake, camel]) => {
+    sections[camel] = Boolean(onboarding.sections?.[snake]);
+  });
+  if (!onboarding.sections) {
+    // Profiles created before onboarding existed: infer what is already present
+    sections.basicInfo = Boolean(p.full_name && p.phone);
+    sections.emergencyContact = Boolean(p.emergency_contact?.name && p.emergency_contact?.phone);
+  }
+
+  return {
+    uid: firebaseUser?.uid || p.id,
+    email: firebaseUser?.email || p.email || "",
+    role: p.role || "patient",
+    profile: {
+      ...p,
+      name: p.full_name || firebaseUser?.displayName || "",
+      mobile: p.phone || "",
+      emergencyContact: p.emergency_contact || null,
+      completionState: {
+        profileCompleted: Boolean(onboarding.completed),
+        sections
+      }
+    }
+  };
+};
+
+/**
+ * Explicit sign-in / sign-up flows are authoritative. Creating an account fires the auth
+ * listener immediately, and its profile fetch can finish after the sign-up flow has saved the
+ * name and phone; without this guard that older snapshot would overwrite the newer user.
+ * Every flow bumps `authSequence`; listener results from an older sequence are dropped.
+ */
+let authSequence = 0;
+let explicitFlows = 0;
+
+async function explicitAuthFlow(run) {
+  authSequence += 1;
+  explicitFlows += 1;
+  try {
+    return await run();
+  } finally {
+    explicitFlows -= 1;
+  }
+}
+
+export const fetchAppUser = async (firebaseUser = auth?.currentUser) => {
+  const { data } = await api.get("/users/me");
+  return toAppUser(firebaseUser, data);
 };
 
 // Mock Database & Auth State
@@ -104,88 +183,68 @@ const saveMockUser = (email, userData) => {
   users[email.toLowerCase()] = userData;
   try {
     localStorage.setItem("sentimed_mock_users", JSON.stringify(users));
-  } catch {}
+  } catch (err) {
+    console.warn("Mock user not persisted:", err);
+  }
 };
 
-/**
- * Register auth state listener with non-blocking execution.
- */
-export const onAuthStateChange = (callback) => {
-  if (isRealFirebaseConfigured && auth) {
-    try {
-      return auth.onAuthStateChanged(async (firebaseUser) => {
-        if (firebaseUser) {
-          try {
-            const docRef = doc(db, "users", firebaseUser.uid);
-            const docSnap = await Promise.race([
-              getDoc(docRef),
-              new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore timeout")), 2500))
-            ]);
-
-            if (docSnap && docSnap.exists()) {
-              callback({
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                role: docSnap.data().role || "patient",
-                profile: docSnap.data()
-              });
-              initAnalyticsLazy();
-              return;
-            }
-          } catch (e) {
-            console.warn("Firestore profile fetch timed out or failed, using Auth defaults:", e);
-          }
-
-          callback({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: "patient",
-            profile: { name: firebaseUser.displayName || "Patient User" }
-          });
-          initAnalyticsLazy();
-        } else {
-          callback(null);
-        }
-      });
-    } catch (err) {
-      console.error("Firebase auth listener error, falling back to Sandbox:", err);
-      callback(currentUserInstance);
-      return () => {};
-    }
-  } else {
-    // Sandbox Mode: Immediately register listener and notify state without delay
-    listeners.add(callback);
-    Promise.resolve().then(() => {
-      callback(currentUserInstance);
-    });
-    return () => {
-      listeners.delete(callback);
-    };
+/** Sandbox only: persists the in-memory demo user after local profile changes. */
+export const saveSandboxUser = (user) => {
+  currentUserInstance = user;
+  try {
+    localStorage.setItem("sentimed_current_user", JSON.stringify(user));
+  } catch (err) {
+    console.warn("Sandbox user not persisted:", err);
   }
 };
 
 /**
- * Sign In User with structured profile completion states
+ * Register auth state listener.
+ * Live mode reports { user } on success, or { error } when the backend profile cannot be loaded.
+ */
+export const onAuthStateChange = (callback, onError = () => {}) => {
+  if (isRealFirebaseConfigured && auth) {
+    return auth.onAuthStateChanged(async (firebaseUser) => {
+      if (!firebaseUser) {
+        callback(null);
+        return;
+      }
+      if (explicitFlows > 0) return; // the sign-in/sign-up flow reports the user itself
+      const sequence = authSequence;
+      try {
+        const user = await fetchAppUser(firebaseUser);
+        if (sequence !== authSequence || explicitFlows > 0) return; // superseded by a newer flow
+        callback(user);
+        initAnalyticsLazy();
+      } catch (e) {
+        if (sequence !== authSequence) return;
+        console.warn("Signed in, but the backend profile could not be loaded:", e);
+        onError(e);
+        callback(null);
+      }
+    });
+  }
+
+  // Sandbox Mode: Immediately register listener and notify state without delay
+  listeners.add(callback);
+  Promise.resolve().then(() => {
+    callback(currentUserInstance);
+  });
+  return () => {
+    listeners.delete(callback);
+  };
+};
+
+/**
+ * Sign In User. In live mode the portal tab the user chose (expectedRole) is only a hint;
+ * the role always comes from the backend.
  */
 export const loginUser = async (email, password, expectedRole = "patient") => {
   if (isRealFirebaseConfigured && auth) {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-    
-    let role = expectedRole;
-    let profile = { name: user.displayName || email.split("@")[0] };
-
-    try {
-      const docSnap = await getDoc(doc(db, "users", user.uid));
-      if (docSnap.exists()) {
-        role = docSnap.data().role || expectedRole;
-        profile = docSnap.data();
-      }
-    } catch (e) {
-      console.warn("Firestore profile fetch failed during login:", e);
-    }
-
-    return { uid: user.uid, email: user.email, role, profile };
+    return explicitAuthFlow(async () => {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      return fetchAppUser(userCredential.user);
+    });
   } else {
     // Sandbox Mode with realistic mock completion profiles
     return new Promise((resolve) => {
@@ -234,7 +293,7 @@ export const loginUser = async (email, password, expectedRole = "patient") => {
           uid: "demo-user-" + Date.now(),
           email,
           role: expectedRole,
-          profile: { 
+          profile: {
             name: email.split("@")[0] || "Demo User",
             mobile: "+1 (555) 234-5678",
             emergencyContact: isPartialDemo || isNewPatientDemo ? null : { name: "Jane Sandhu", phone: "+1 (555) 987-6543" },
@@ -252,7 +311,9 @@ export const loginUser = async (email, password, expectedRole = "patient") => {
 };
 
 /**
- * Sign Up Patient (Starts with incomplete profile)
+ * Sign Up Patient (Starts with incomplete profile).
+ * Live mode: creates the Firebase Auth account, then the backend creates the profile
+ * (role is always patient; privileged roles are granted only by an admin).
  */
 export const signUpPatient = async (email, password, profileDetails) => {
   const initialCompletion = {
@@ -267,23 +328,18 @@ export const signUpPatient = async (email, password, profileDetails) => {
   };
 
   if (isRealFirebaseConfigured && auth) {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-    
-    const docData = {
-      uid: user.uid,
-      email: user.email,
-      role: "patient",
-      createdAt: new Date().toISOString(),
-      completionState: initialCompletion,
-      ...profileDetails
-    };
-    try {
-      await setDoc(doc(db, "users", user.uid), docData);
-    } catch (e) {
-      console.warn("Failed to write Firestore profile doc:", e);
-    }
-    return { uid: user.uid, email: user.email, role: "patient", profile: docData };
+    return explicitAuthFlow(async () => {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      if (profileDetails?.name) {
+        await updateAuthProfile(userCredential.user, { displayName: profileDetails.name });
+      }
+      await api.get("/users/me"); // initializes the profile on the backend
+      const updates = {};
+      if (profileDetails?.name) updates.full_name = profileDetails.name;
+      if (profileDetails?.mobile) updates.phone = profileDetails.mobile;
+      const { data } = Object.keys(updates).length ? await api.patch("/users/me", updates) : await api.get("/users/me");
+      return toAppUser(userCredential.user, data);
+    });
   } else {
     return new Promise((resolve) => {
       setTimeout(() => {
@@ -313,9 +369,10 @@ export const signUpPatient = async (email, password, profileDetails) => {
  */
 export const loginWithGoogle = async (role = "patient") => {
   if (isRealFirebaseConfigured && auth && googleProvider) {
-    const result = await signInWithPopup(auth, googleProvider);
-    const user = result.user;
-    return { uid: user.uid, email: user.email, role, profile: { name: user.displayName } };
+    return explicitAuthFlow(async () => {
+      const result = await signInWithPopup(auth, googleProvider);
+      return fetchAppUser(result.user);
+    });
   } else {
     return new Promise((resolve) => {
       setTimeout(() => {
@@ -323,7 +380,7 @@ export const loginWithGoogle = async (role = "patient") => {
           uid: "google-mock-" + Date.now(),
           email: "google.user@example.com",
           role,
-          profile: { 
+          profile: {
             name: "Google Demo User",
             completionState: {
               profileCompleted: true,
@@ -344,6 +401,7 @@ export const loginWithGoogle = async (role = "patient") => {
  * Sign Out User
  */
 export const logoutUser = async () => {
+  clearDrafts(); // unsaved journal/companion text must not be visible to the next user
   if (isRealFirebaseConfigured && auth) {
     await signOut(auth);
   }

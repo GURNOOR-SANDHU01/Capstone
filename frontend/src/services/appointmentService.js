@@ -3,6 +3,9 @@
  * Manages full lifecycle appointment requests, approvals, rejections, rescheduling, and confirmed Google Meet consultations.
  */
 
+import { isRealFirebaseConfigured } from "./firebase";
+import { api } from "./apiClient";
+
 const APPOINTMENTS_STORAGE_KEY = "sentimed_appointments";
 
 export const APPOINTMENT_STATUS = {
@@ -264,3 +267,84 @@ export const cancelAppointment = (appointmentId) => {
   saveAppointments(updated);
   return updated;
 };
+
+/* ------------------------------------------------------------------ */
+/* Unified async API (live -> Express, sandbox -> localStorage above)  */
+/* ------------------------------------------------------------------ */
+
+/** API appointment -> the field names the appointment components render */
+export const fromApiAppointment = (a) => ({
+  id: a.id,
+  patientId: a.patient_id,
+  patientName: a.patient_name || "Patient",
+  doctorId: a.doctor_id,
+  doctorName: a.doctor_name || "Doctor",
+  specialization: a.specialization || "",
+  clinicName: a.clinic_name || "",
+  date: a.date,
+  time: a.time,
+  type: a.type,
+  status: a.status,
+  createdBy: a.created_by,
+  meetingProvider: a.meeting_provider,
+  meetingUrl: a.meeting_url,
+  reason: a.reason,
+  notes: a.notes || "",
+  rescheduledDate: a.rescheduled_date || null,
+  rescheduledTime: a.rescheduled_time || null,
+  rescheduleNote: a.reschedule_note || null,
+  rejectionReason: a.rejection_reason || null
+});
+
+export async function fetchAppointments() {
+  if (!isRealFirebaseConfigured) return getAppointments();
+  const { data } = await api.get("/appointments");
+  return (data || []).map(fromApiAppointment);
+}
+
+const appointmentBody = (form, counterpart) => {
+  const body = { ...counterpart, date: form.date, time: form.time, type: form.type, reason: form.reason };
+  if (form.notes) body.notes = form.notes;
+  if (form.clinicName) body.clinic_name = form.clinicName;
+  return body;
+};
+
+/** Patient requests an appointment (PENDING). */
+export async function requestAppointment(form) {
+  if (!isRealFirebaseConfigured) return createPatientAppointment(form).newApt;
+  const { data } = await api.post("/appointments", appointmentBody(form, { doctor_id: form.doctorId }));
+  return fromApiAppointment(data);
+}
+
+/** Doctor schedules directly with a consenting patient (CONFIRMED). */
+export async function scheduleAppointment(form) {
+  if (!isRealFirebaseConfigured) return createDoctorAppointment(form).newApt;
+  const { data } = await api.post("/appointments", appointmentBody(form, { patient_id: form.patientId }));
+  return fromApiAppointment(data);
+}
+
+const SANDBOX_ACTIONS = {
+  confirm: (id) => confirmAppointment(id),
+  reject: (id, x) => rejectAppointment(id, x.reason),
+  reschedule: (id, x) => rescheduleAppointment(id, x.date, x.time, x.note),
+  accept_reschedule: (id) => acceptReschedule(id),
+  cancel: (id) => cancelAppointment(id)
+};
+
+/** confirm | reject | reschedule | accept_reschedule | cancel | complete */
+export async function appointmentAction(id, action, extra = {}) {
+  if (!isRealFirebaseConfigured) {
+    SANDBOX_ACTIONS[action](id, extra);
+    return getAppointments().find((a) => a.id === id);
+  }
+  const body = { action };
+  if (extra.reason) body.reason = extra.reason;
+  if (extra.date) body.date = extra.date;
+  if (extra.time) body.time = extra.time;
+  if (extra.note) body.note = extra.note;
+  const { data } = await api.post(`/appointments/${encodeURIComponent(id)}/actions`, body);
+  return fromApiAppointment(data);
+}
+
+/** Display name of the video provider stored on an appointment. */
+export const meetingProviderLabel = (provider) => (provider === "jitsi" ? "Video Call" : "Google Meet");

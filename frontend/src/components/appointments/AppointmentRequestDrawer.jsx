@@ -1,11 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Video, Building, AlertCircle } from 'lucide-react';
 import { Drawer, Button } from '../ui';
-import { DoctorSelector, AVAILABLE_DOCTORS_DEMO } from './DoctorSelector';
+import { DoctorSelector } from './DoctorSelector';
 import { TimeSlotSelector } from './TimeSlotSelector';
+import { listDoctors } from '../../services/clinicalApi';
+import { describeError } from '../../services/apiClient';
+import { useAsyncData } from '../../hooks/useAsyncData';
+import { LoadState } from '../ui';
 
 export function AppointmentRequestDrawer({ open, onClose, onSubmit }) {
-  const [selectedDoctor, setSelectedDoctor] = useState(AVAILABLE_DOCTORS_DEMO[0]);
+  const doctors = useAsyncData(listDoctors, [], []);
+  const [selectedDoctor, setSelectedDoctor] = useState(null);
+  useEffect(() => {
+    if (!selectedDoctor && doctors.data?.length) setSelectedDoctor(doctors.data[0]);
+  }, [doctors.data, selectedDoctor]);
+  const [submitError, setSubmitError] = useState("");
   const todayISO = new Date().toISOString().split('T')[0];
   const [date, setDate] = useState(todayISO);
   const [time, setTime] = useState("10:30 AM");
@@ -26,45 +35,50 @@ export function AppointmentRequestDrawer({ open, onClose, onSubmit }) {
     if (!date) {
       errs.date = "Please select a valid date.";
     }
+    if (!selectedDoctor) {
+      errs.doctor = "Please choose a doctor.";
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (!validate() || isSubmitting) return;
 
     setIsSubmitting(true);
-
-    onSubmit({
-      doctorId: selectedDoctor.id,
-      doctorName: selectedDoctor.name,
-      specialization: selectedDoctor.specialization,
-      clinicName: selectedDoctor.clinic,
-      patientName: "Gurnoor Sandhu",
-      patientId: "P-0041",
-      date,
-      time,
-      type,
-      reason: reason.trim(),
-      notes: notes.trim(),
-      meetingProvider: null,
-      meetingUrl: null
-    });
-
-    setIsSubmitting(false);
-    setReason("");
-    setNotes("");
-    onClose();
+    setSubmitError("");
+    try {
+      // The patient's identity is taken from the signed-in account on the server
+      await onSubmit({
+        doctorId: selectedDoctor.id,
+        doctorName: selectedDoctor.name,
+        specialization: selectedDoctor.specialization,
+        clinicName: selectedDoctor.clinic,
+        date,
+        time,
+        type,
+        reason: reason.trim(),
+        notes: notes.trim()
+      });
+      setReason("");
+      setNotes("");
+      onClose();
+    } catch (err) {
+      setSubmitError(describeError(err));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const footerActions = (
     <>
+      {submitError && <span role="alert" style={{ color: "#C0392B", fontSize: 12, flex: 1 }}>{submitError}</span>}
       <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
         Cancel
       </Button>
-      <Button 
-        variant="primary" 
+      <Button
+        variant="primary"
         onClick={handleSubmit}
         loading={isSubmitting}
         disabled={isSubmitting}
@@ -90,10 +104,16 @@ export function AppointmentRequestDrawer({ open, onClose, onSubmit }) {
           <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 8 }}>
             1. SELECT DOCTOR & CLINIC
           </label>
+          <LoadState loading={doctors.loading} error={doctors.error} onRetry={doctors.reload} label="Loading doctors..." />
+          {!doctors.loading && !doctors.error && (doctors.data || []).length === 0 && (
+            <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>No doctors are available for booking yet.</p>
+          )}
           <DoctorSelector
-            selectedDoctorId={selectedDoctor.id}
+            doctors={doctors.data || []}
+            selectedDoctorId={selectedDoctor?.id}
             onSelect={(doc) => setSelectedDoctor(doc)}
           />
+          {errors.doctor && <div style={{ color: "var(--color-danger)", fontSize: 12, marginTop: 4 }}>{errors.doctor}</div>}
         </div>
 
         {/* 2. PREFERRED DATE */}
@@ -101,16 +121,16 @@ export function AppointmentRequestDrawer({ open, onClose, onSubmit }) {
           <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 6 }}>
             2. PREFERRED DATE
           </label>
-          <input 
-            type="date" 
-            className="input-field" 
-            value={date} 
+          <input
+            type="date"
+            className="input-field"
+            value={date}
             min={todayISO}
             onChange={(e) => {
               setDate(e.target.value);
               if (errors.date) setErrors({ ...errors, date: null });
-            }} 
-            required 
+            }}
+            required
           />
           {errors.date && <div style={{ color: "var(--color-danger)", fontSize: 12, marginTop: 4 }}>{errors.date}</div>}
         </div>

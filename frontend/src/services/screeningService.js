@@ -1,7 +1,12 @@
 /**
  * SentiMed Patient Onboarding & Profile Completion Service
  * Manages section-level profile completion states and risk evaluation.
+ *
+ * Live mode: answers are sent to PUT /api/users/me/onboarding; the backend evaluates risk,
+ * stores completion, and raises safety alerts. Sandbox mode keeps the local evaluation below.
  */
+import { isRealFirebaseConfigured, toAppUser, auth, saveSandboxUser } from "./firebase";
+import { api } from "./apiClient";
 
 export const RISK_LEVELS = {
   LOW: "LOW",
@@ -97,20 +102,26 @@ export const saveScreeningResult = (currentUser, data) => {
     updatedAt: new Date().toISOString()
   };
 
-  // Update in-memory user profile
-  if (currentUser && currentUser.profile) {
-    currentUser.profile.completionState = newCompletionState;
-    currentUser.profile.emergencyContact = data.emergencyContact;
-    currentUser.profile.wellnessAnswers = data.wellnessAnswers;
-    currentUser.profile.safetyAnswers = data.safetyAnswers;
-    currentUser.profile.privacyConsent = true;
-
-    try {
-      localStorage.setItem("sentimed_current_user", JSON.stringify(currentUser));
-    } catch {}
-  }
+  // Build an updated copy of the sandbox user (the caller's object is not mutated)
+  const updatedUser = currentUser
+    ? {
+        ...currentUser,
+        profile: {
+          ...(currentUser.profile || {}),
+          name: data.basicInfo?.fullName || currentUser.profile?.name,
+          mobile: data.basicInfo?.phone || currentUser.profile?.mobile,
+          completionState: newCompletionState,
+          emergencyContact: data.emergencyContact,
+          wellnessAnswers: data.wellnessAnswers,
+          safetyAnswers: data.safetyAnswers,
+          privacyConsent: true
+        }
+      }
+    : null;
+  if (updatedUser) saveSandboxUser(updatedUser);
 
   return {
+    user: updatedUser,
     id: `screen-${Date.now()}`,
     timestamp: new Date().toISOString(),
     riskCategory,
@@ -119,5 +130,53 @@ export const saveScreeningResult = (currentUser, data) => {
     wellnessAnswers: data.wellnessAnswers || {},
     safetyAnswers: data.safetyAnswers || {},
     completionState: newCompletionState
+  };
+};
+
+/**
+ * Submits the onboarding wizard.
+ * Returns { riskCategory, user, alertsCreated } where `user` is the refreshed app user.
+ */
+export const submitOnboarding = async (currentUser, data) => {
+  if (!isRealFirebaseConfigured) {
+    const record = saveScreeningResult(currentUser, data);
+    if (record.riskCategory !== RISK_LEVELS.LOW) {
+      // dynamic imports: riskWorkflowService itself imports this module
+      const { createRiskAlert } = await import("./riskWorkflowService");
+      const { dispatchSafetyNotification } = await import("./notificationService");
+      createRiskAlert(record);
+      await dispatchSafetyNotification({
+        recipientType: "DOCTOR",
+        recipientName: "Care Team",
+        riskCategory: record.riskCategory,
+        alertType: record.riskCategory === RISK_LEVELS.HIGH_URGENT ? "URGENT_SAFETY_SCREENING" : "MODERATE_WELLNESS_FLAG"
+      });
+    }
+    return { ...record, alertsCreated: record.riskCategory === RISK_LEVELS.LOW ? 0 : 1 };
+  }
+
+  const { data: result } = await api.put("/users/me/onboarding", {
+    basic_info: {
+      full_name: data.basicInfo.fullName,
+      phone: data.basicInfo.phone,
+      language: data.basicInfo.language || "English"
+    },
+    emergency_contact: {
+      name: data.emergencyContact.name,
+      relation: data.emergencyContact.relation,
+      phone: data.emergencyContact.phone
+    },
+    wellness_answers: data.wellnessAnswers,
+    safety_answers: {
+      crisis_thoughts: data.safetyAnswers.crisisThoughts,
+      immediate_risk: data.safetyAnswers.immediateRisk || "no"
+    },
+    privacy_consent: true
+  });
+
+  return {
+    riskCategory: result.risk_category,
+    alertsCreated: result.alerts_created,
+    user: toAppUser(auth?.currentUser, result.profile)
   };
 };

@@ -1,0 +1,55 @@
+{
+  "name": "sentience-backend",
+  "version": "1.0.0",
+  "description": "Sentience AI-Assisted Emotional Well-Being Application - Firebase & Backend API",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "jest --runInBand --detectOpenHandles --forceExit",
+    "test:coverage": "jest --coverage --runInBand --forceExit",
+    "seed": "node seed.js",
+    "db:backup": "node scripts/backup-firestore.js",
+    "db:reconcile": "node scripts/reconcile-data.js",
+    "auth:set-role": "node scripts/set-role.js",
+    "auth:demo-accounts": "node scripts/create-demo-accounts.js",
+    "smoke:live": "node scripts/live-smoke-test.js"
+  },
+  "keywords": [
+    "sentience",
+    "firebase",
+    "firestore",
+    "express",
+    "mental-health",
+    "ai",
+    "cbt"
+  ],
+  "author": "Sentience Engineering Team",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.8.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "firebase-admin": "^13.2.0",
+    "helmet": "^8.0.0",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "verbose": true,
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js"
+    ]
+  }
+}

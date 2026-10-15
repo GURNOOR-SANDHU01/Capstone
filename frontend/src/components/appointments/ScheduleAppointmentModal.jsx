@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { 
-  Video, 
-  Building, 
-  AlertCircle 
+import {
+  Video,
+  Building,
+  AlertCircle
 } from 'lucide-react';
 import { Modal, Button } from '../ui';
-import { DoctorSelector, AVAILABLE_DOCTORS_DEMO } from './DoctorSelector';
+import { DoctorSelector } from './DoctorSelector';
+import { AVAILABLE_DOCTORS_DEMO } from '../../data/mockData';
 import { TimeSlotSelector } from './TimeSlotSelector';
 
-export function ScheduleAppointmentModal({ 
-  isOpen, 
-  onClose, 
-  userRole = "patient", 
-  onSubmit 
+export function ScheduleAppointmentModal({
+  isOpen,
+  onClose,
+  userRole = "patient",
+  onSubmit
 }) {
   const isDoctor = userRole === "doctor";
 
@@ -100,16 +101,16 @@ export function ScheduleAppointmentModal({
           <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 4 }}>
             2. PREFERRED DATE
           </label>
-          <input 
-            type="date" 
-            className="input-field" 
-            value={date} 
+          <input
+            type="date"
+            className="input-field"
+            value={date}
             min={todayISO}
             onChange={(e) => {
               setDate(e.target.value);
               if (errors.date) setErrors({ ...errors, date: null });
-            }} 
-            required 
+            }}
+            required
           />
           {errors.date && <div style={{ color: "var(--color-danger)", fontSize: 12, marginTop: 4 }}>{errors.date}</div>}
         </div>
@@ -193,8 +194,8 @@ export function ScheduleAppointmentModal({
           <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             variant="primary"
             loading={isSubmitting}
             disabled={isSubmitting}

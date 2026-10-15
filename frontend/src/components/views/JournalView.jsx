@@ -1,30 +1,77 @@
 import React, { useState } from 'react';
-import { 
-  PenSquare, 
-  Search, 
-  Tag as TagIcon, 
-  Trash2, 
-  Brain, 
-  Filter, 
-  CheckCircle2, 
+import {
+  PenSquare,
+  Search,
+  Tag as TagIcon,
+  Trash2,
+  Brain,
+  Filter,
+  CheckCircle2,
   Sparkles,
   X,
   Lock,
-  Users
+  Users,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+  Pencil
 } from 'lucide-react';
 import { MOOD_DEFINITIONS } from '../../data/mockData';
-import { createJournalEntry, deleteJournalEntry } from '../../services/journalService';
+import { describeError } from '../../services/apiClient';
+import { useDraftState } from '../../hooks/useDraftState';
 import SentimentBar from '../SentimentBar';
 
-export default function JournalView({ entries = [], setEntries, onNotification }) {
-  const [mood, setMood] = useState("Calm");
-  const [text, setText] = useState("");
-  const [privacy, setPrivacy] = useState("shared"); // 'private' or 'shared'
+export default function JournalView({
+  entries = [],
+  loading = false,
+  error = "",
+  onReload,
+  onAdd,
+  onDelete,
+  onSetVisibility,
+  onEdit,
+  onNotification
+}) {
+  // Composer fields survive navigating to other screens (in-memory only, cleared on sign-out)
+  const [mood, setMood] = useDraftState("journal.mood", "Calm");
+  const [text, setText] = useDraftState("journal.text", "");
+  const [privacy, setPrivacy] = useDraftState("journal.privacy", "shared"); // 'private' or 'shared'
   const [tagInput, setTagInput] = useState("");
-  const [tags, setTags] = useState(["reflection"]);
-  const [reflectionText, setReflectionText] = useState("");
+  const [tags, setTags] = useDraftState("journal.tags", ["reflection"]);
+  const [reflectionText, setReflectionText] = useDraftState("journal.reflection", "");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterMood, setFilterMood] = useState("all");
+  const [saving, setSaving] = useState(false);
+  const [busyEntryId, setBusyEntryId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [editing, setEditing] = useState(null); // { id, text, reflection, mood }
+
+  const handleSaveEdit = async () => {
+    if (!editing.text.trim()) {
+      onNotification("Input Required", "An entry cannot be empty.");
+      return;
+    }
+    setBusyEntryId(editing.id);
+    try {
+      const updated = await onEdit(editing.id, {
+        text: editing.text.trim(),
+        reflection: editing.reflection,
+        mood: editing.mood
+      });
+      setEditing(null);
+      onNotification("Entry Updated", "Your changes were saved.");
+      if (updated?.severity === "high") {
+        onNotification(
+          "Support Is Available",
+          "Your entry suggests you may be going through a lot. If you are in danger, call your local emergency number or a crisis line now."
+        );
+      }
+    } catch (err) {
+      onNotification("Update Failed", describeError(err));
+    } finally {
+      setBusyEntryId(null);
+    }
+  };
 
   const handleAddTag = (e) => {
     if (e.key === 'Enter' && tagInput.trim()) {
@@ -40,41 +87,72 @@ export default function JournalView({ entries = [], setEntries, onNotification }
     setTags(tags.filter(t => t !== tagToRemove));
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!text.trim()) {
       onNotification("Input Required", "Please enter your thoughts before saving.");
       return;
     }
+    if (saving) return;
 
-    const { updatedEntries, createdEntry } = createJournalEntry({
-      mood,
-      text,
-      privacy,
-      tags,
-      reflection: reflectionText
-    });
-
-    setEntries(updatedEntries);
-    onNotification(
-      "Journal Saved", 
-      `Entry saved (${privacy === "shared" ? "Shared with Doctor" : "Private"}).`
-    );
-    
-    // Reset Form
-    setText("");
-    setTags(["reflection"]);
-    setReflectionText("");
+    setSaving(true);
+    const submitted = { text, tags, reflection: reflectionText };
+    try {
+      const created = await onAdd({ mood, text, privacy, tags, reflection: reflectionText });
+      onNotification(
+        "Journal Saved",
+        `Entry saved (${created.privacy === "shared" ? "Shared with your consented doctors" : "Private"}).`
+      );
+      if (created.severity === "high") {
+        onNotification(
+          "Support Is Available",
+          "Your entry suggests you may be going through a lot. If you are in danger, call your local emergency number or a crisis line now."
+        );
+      }
+      // Reset only after the server confirmed the save, and never discard anything typed meanwhile
+      setText((current) => (current === submitted.text ? "" : current));
+      setTags((current) => (current === submitted.tags ? ["reflection"] : current));
+      setReflectionText((current) => (current === submitted.reflection ? "" : current));
+    } catch (err) {
+      onNotification("Save Failed", describeError(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = (id) => {
-    const updated = deleteJournalEntry(id);
-    setEntries(updated);
-    onNotification("Entry Removed", "Journal entry deleted from local storage.");
+  const handleDelete = async (id) => {
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
+    setConfirmDeleteId(null);
+    setBusyEntryId(id);
+    try {
+      await onDelete(id);
+      onNotification("Entry Removed", "Journal entry permanently deleted.");
+    } catch (err) {
+      onNotification("Delete Failed", describeError(err));
+    } finally {
+      setBusyEntryId(null);
+    }
   };
 
-  const filteredEntries = entries.filter((e) => {
-    const matchesSearch = e.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const handleToggleVisibility = async (item) => {
+    const next = item.privacy === "shared" ? "private" : "shared";
+    setBusyEntryId(item.id);
+    try {
+      await onSetVisibility(item.id, next);
+      onNotification(
+        "Sharing Updated",
+        next === "shared" ? "Entry is now shared with your consented doctors." : "Entry is now private."
+      );
+    } catch (err) {
+      onNotification("Update Failed", describeError(err));
+    } finally {
+      setBusyEntryId(null);
+    }
+  };  const filteredEntries = entries.filter((e) => {
+    const matchesSearch = e.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           e.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesFilter = filterMood === "all" || e.mood === filterMood;
     return matchesSearch && matchesFilter;
@@ -122,8 +200,8 @@ export default function JournalView({ entries = [], setEntries, onNotification }
               </button>
             </div>
             <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 6 }}>
-              {privacy === "shared" 
-                ? "✓ Authorized care coordinator can review this entry." 
+              {privacy === "shared"
+                ? "✓ Authorized care coordinator can review this entry."
                 : "🔒 Strictly private. Hidden from doctor portal & clinical views."}
             </div>
           </div>
@@ -154,13 +232,13 @@ export default function JournalView({ entries = [], setEntries, onNotification }
                       transition: "all 0.15s"
                     }}
                   >
-                    <span 
-                      style={{ 
-                        width: 12, 
-                        height: 12, 
-                        borderRadius: "50%", 
-                        backgroundColor: m.color 
-                      }} 
+                    <span
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: "50%",
+                        backgroundColor: m.color
+                      }}
                     />
                     <span style={{ fontSize: 12, fontWeight: 700, color: isSelected ? m.color : "var(--color-text)" }}>
                       {m.label}
@@ -237,20 +315,21 @@ export default function JournalView({ entries = [], setEntries, onNotification }
 
           {/* Action Buttons */}
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={() => { setText(""); setTags(["reflection"]); }}
               className="btn btn-outline"
             >
               Reset
             </button>
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={handleSave}
               className="btn btn-primary"
+              disabled={saving}
             >
-              <CheckCircle2 size={16} />
-              <span>Save Entry</span>
+              {saving ? <Loader2 size={16} className="spin-anim" /> : <CheckCircle2 size={16} />}
+              <span>{saving ? "Saving..." : "Save Entry"}</span>
             </button>
           </div>
         </div>
@@ -273,7 +352,7 @@ export default function JournalView({ entries = [], setEntries, onNotification }
             </div>
 
             <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
-              <button 
+              <button
                 onClick={() => setFilterMood("all")}
                 className={`btn btn-sm ${filterMood === "all" ? "btn-primary" : "btn-outline"}`}
               >
@@ -293,10 +372,30 @@ export default function JournalView({ entries = [], setEntries, onNotification }
 
           {/* Filtered Entry List */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {filteredEntries.length === 0 ? (
+            {error && (
+              <div className="card" role="alert" style={{ display: "flex", alignItems: "center", gap: 10, color: "#C0392B" }}>
+                <AlertCircle size={18} />
+                <span style={{ fontSize: 13, flex: 1 }}>Could not load your journal: {error}</span>
+                {onReload && (
+                  <button type="button" className="btn btn-outline btn-sm" onClick={onReload}>
+                    <RefreshCw size={14} /> <span>Retry</span>
+                  </button>
+                )}
+              </div>
+            )}
+            {loading ? (
+              <div className="card" style={{ textAlign: "center", padding: 32, color: "var(--color-text-muted)" }}>
+                <Loader2 size={28} className="spin-anim" style={{ margin: "0 auto" }} />
+                <p style={{ marginTop: 8, fontSize: 13 }}>Loading your journal...</p>
+              </div>
+            ) : filteredEntries.length === 0 ? (
               <div className="card" style={{ textAlign: "center", padding: 32, color: "var(--color-text-muted)" }}>
                 <Brain size={32} style={{ margin: "0 auto", opacity: 0.5 }} />
-                <p style={{ marginTop: 8, fontSize: 13 }}>No journal entries found matching your filter.</p>
+                <p style={{ marginTop: 8, fontSize: 13 }}>
+                  {entries.length === 0 && !error
+                    ? "No journal entries yet. Write your first entry to begin tracking your wellbeing."
+                    : "No journal entries found matching your filter."}
+                </p>
               </div>
             ) : (
               filteredEntries.map((item) => (
@@ -304,26 +403,93 @@ export default function JournalView({ entries = [], setEntries, onNotification }
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span className="badge badge-primary">{item.mood}</span>
-                      <span className={`badge ${item.privacy === "shared" ? "badge-primary" : "badge-muted"}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleVisibility(item)}
+                        disabled={busyEntryId === item.id}
+                        title={item.privacy === "shared" ? "Click to make private" : "Click to share with your consented doctors"}
+                        className={`badge ${item.privacy === "shared" ? "badge-primary" : "badge-muted"}`}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, border: "none", cursor: "pointer" }}
+                      >
                         {item.privacy === "shared" ? <Users size={11} /> : <Lock size={11} />}
                         {item.privacy === "shared" ? "Shared with Doctor" : "Private"}
-                      </span>
+                      </button>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{item.date}</span>
-                      <button 
+                      {onEdit && editing?.id !== item.id && (
+                        <button
+                          onClick={() => setEditing({ id: item.id, text: item.text, reflection: item.reflection || "", mood: item.mood })}
+                          className="btn btn-ghost btn-sm"
+                          title="Edit entry"
+                          disabled={busyEntryId === item.id}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
+                      <button
                         onClick={() => handleDelete(item.id)}
-                        className="btn btn-ghost btn-sm"
-                        title="Delete entry"
+                        onBlur={() => confirmDeleteId === item.id && setConfirmDeleteId(null)}
+                        className={`btn btn-sm ${confirmDeleteId === item.id ? "btn-danger" : "btn-ghost"}`}
+                        title={confirmDeleteId === item.id ? "Click again to permanently delete" : "Delete entry"}
+                        disabled={busyEntryId === item.id}
                       >
-                        <Trash2 size={14} />
+                        {busyEntryId === item.id ? <Loader2 size={14} className="spin-anim" /> : <Trash2 size={14} />}
+                        {confirmDeleteId === item.id && <span style={{ fontSize: 11 }}>Confirm</span>}
                       </button>
                     </div>
                   </div>
 
-                  <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--color-text)" }}>
-                    {item.text}
-                  </p>
+                  {editing?.id === item.id ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <select
+                        className="input-field"
+                        aria-label="Mood"
+                        value={editing.mood}
+                        onChange={(e) => setEditing({ ...editing, mood: e.target.value })}
+                      >
+                        {MOOD_DEFINITIONS.map((m) => (
+                          <option key={m.label} value={m.label}>{m.label}</option>
+                        ))}
+                      </select>
+                      <textarea
+                        className="input-field"
+                        aria-label="Edit entry text"
+                        rows={4}
+                        maxLength={2000}
+                        style={{ height: "auto" }}
+                        value={editing.text}
+                        onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                      />
+                      <input
+                        type="text"
+                        className="input-field"
+                        aria-label="Edit reflection"
+                        placeholder="Your CBT reflection (optional)"
+                        value={editing.reflection}
+                        onChange={(e) => setEditing({ ...editing, reflection: e.target.value })}
+                      />
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                        <button type="button" className="btn btn-outline btn-sm" onClick={() => setEditing(null)} disabled={busyEntryId === item.id}>
+                          Cancel
+                        </button>
+                        <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveEdit} disabled={busyEntryId === item.id}>
+                          {busyEntryId === item.id ? "Saving..." : "Save Changes"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--color-text)" }}>
+                      {item.text}
+                    </p>
+                  )}
+
+                  {item.reflectionPrompt && (
+                    <div style={{ fontSize: 11, color: "var(--color-primary-dark)", display: "flex", gap: 6, alignItems: "flex-start" }}>
+                      <Sparkles size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <span><strong>CBT prompt:</strong> {item.reflectionPrompt}</span>
+                    </div>
+                  )}
 
                   <SentimentBar value={item.sentiment} label="Multimodal Score" />
 

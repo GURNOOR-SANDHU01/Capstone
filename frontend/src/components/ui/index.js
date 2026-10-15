@@ -7,3 +7,4 @@ export { PageHeader } from './PageHeader';
 export { EmptyState } from './EmptyState';
 export { DataTable } from './DataTable';
 export { PermissionGate } from './PermissionGate';
+export { LoadState } from './LoadState';
