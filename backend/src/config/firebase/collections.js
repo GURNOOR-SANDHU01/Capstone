@@ -16,7 +16,11 @@ const COLLECTIONS = Object.freeze({
   APPOINTMENTS: 'appointments',
   CARE_INSTRUCTIONS: 'care_instructions',
   MESSAGES: 'messages',
-  CLINICS: 'clinics'
+  CLINICS: 'clinics',
+  // doc id = user uid; holds the ENCRYPTED Google refresh token + connection status
+  FITNESS_CONNECTIONS: 'fitness_connections',
+  // doc id = `${uid}_${YYYY-MM-DD}`; one row of daily metrics per user per day
+  FITNESS_DAILY_METRICS: 'fitness_daily_metrics'
 });
 
 module.exports = { COLLECTIONS };

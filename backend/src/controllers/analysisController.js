@@ -50,7 +50,36 @@ async function analyzeReflection(req, res, next) {
   }
 }
 
+// Voice preview: transcribe + score a recording without storing anything (audio is discarded)
+async function analyzeAudio(req, res, next) {
+  try {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      const err = new Error('Send the recording as the request body with an audio/* Content-Type.');
+      err.status = 400;
+      err.code = 'AUDIO_REQUIRED';
+      throw err;
+    }
+    const mimeType = (req.get('content-type') || 'application/octet-stream').split(';')[0];
+    const result = await modelService.analyzeAudio(req.body, mimeType, 'recording');
+    return success(res, {
+      transcript: scrubPII(result.transcript || ''),
+      emotion: result.emotion ?? result.detected_emotions.primary_state,
+      decision: result.decision ?? null,
+      text_says: result.text_says ?? null,
+      voice_says: result.voice_says ?? null,
+      voice_raw: result.voice_raw ?? null,
+      voice_scores: result.voice_scores || null,
+      fused_scores: result.fused_scores || null,
+      fine_grained_emotions: result.fine_grained_emotions || [],
+      detected_emotions: result.detected_emotions
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  analyzeAudio,
   analyzeEmotions,
   analyzeIntent,
   analyzeSafety,

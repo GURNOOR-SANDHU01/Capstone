@@ -8,3 +8,24 @@ personal/*
 
 .env
 AGENTS.md
+
+# Model weights (too large for git; share via Drive / HF Hub / Git LFS)
+*.pt
+*.pth
+*.bin
+*.safetensors
+model_service/tmp/
+*.ckpt
+*.h5
+*.keras
+*.onnx
+*.tflite
+*.pb
+*.gguf
+*.pkl
+*.joblib
+*.npy
+*.npz
+*.mlmodel
+**/checkpoints/
+**/hf_cache/

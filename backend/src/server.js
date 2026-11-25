@@ -15,6 +15,9 @@ const server = app.listen(config.port, () => {
   logger.info(`=======================================================`);
 });
 
+// Live sync: refresh every connected Google Fit account in the background (no-op if not configured)
+require('./services/fitness/googleFitService').startAutoSync();
+
 // Graceful shutdown handling
 function gracefulShutdown(signal) {
   logger.info(`Received ${signal}. Gracefully shutting down HTTP server...`);

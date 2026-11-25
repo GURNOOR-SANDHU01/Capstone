@@ -54,10 +54,35 @@ const toScore = (s) => (typeof s === "number" ? Math.round(((Math.max(-1, Math.m
  * Converts an API journal entry into the shape the existing UI components render.
  * Doctor "summary" views have no text; `text` is then empty and `access` is "summary".
  */
+const NEGATIVE_EKMAN = ["anger", "disgust", "fear", "sadness"];
+
+/** 7-class voice probabilities -> -1..1 sentiment (same rule as the model service) */
+const voiceSentiment = (scores) => {
+  if (!scores || typeof scores !== "object") return null;
+  const s = (scores.joy || 0) - NEGATIVE_EKMAN.reduce((sum, k) => sum + (scores[k] || 0), 0);
+  return Math.max(-1, Math.min(1, s));
+};
+
+/** How the voice and text models were combined for a voice entry (null for typed entries). */
+const toVoiceAnalysis = (e) => {
+  const va = e.detected_emotions?.voice_analysis;
+  if (e.input_source !== "audio" || !va) return null;
+  return {
+    decision: va.decision || null, // agree | conflict | voice_neutral | no_speech | voice_only_no_text_model
+    voiceSays: va.voice_raw || va.voice_says || null,
+    textSays: va.text_says || null,
+    voiceScores: va.voice_scores || null,
+    fusedScores: va.fused_scores || null,
+    model: e.detected_emotions?.provenance?.model || null
+  };
+};
+
 export const fromApiEntry = (e) => {
   const millis = toMillis(e.created_at);
   const score = toScore(e.detected_emotions?.sentiment_score);
   const voiceAvailable = e.input_source === "audio";
+  const voiceAnalysis = toVoiceAnalysis(e);
+  const vs = voiceSentiment(voiceAnalysis?.voiceScores);
   return {
     id: e.id,
     patientId: e.user_id,
@@ -66,11 +91,15 @@ export const fromApiEntry = (e) => {
     entryDate: e.entry_date,
     mood: moodFromEmotions(e.detected_emotions),
     detectedEmotion: e.detected_emotions?.primary_state || null,
+    emotionConfidence: typeof e.detected_emotions?.confidence === "number" ? e.detected_emotions.confidence : null,
+    isMockAnalysis: Boolean(e.detected_emotions?.provenance?.is_mock),
+    inputSource: e.input_source || "text",
+    voiceAnalysis,
     text: e.masked_content || "",
     tags: e.extracted_themes || [],
     sentiment: score,
     privacy: e.visibility === "shared" ? "shared" : "private",
-    multimodal: { text: score, voice: voiceAvailable ? score : null, video: null },
+    multimodal: { text: score, voice: voiceAvailable ? (vs !== null ? toScore(vs) : score) : null, video: null },
     reflection: e.reflection_prompt?.user_response || "",
     reflectionPrompt: e.reflection_prompt?.prompt_text || "",
     severity: e.safety_flags?.severity_flag || null,
@@ -174,6 +203,51 @@ export async function addJournalEntry({ mood, text, privacy, tags, reflection })
   if (reflection && reflection.trim()) body.reflection_response = reflection.trim();
   const { data } = await api.post("/journal-entries", body);
   return fromApiEntry(data);
+}
+
+/** True when voice journaling can be used (needs the live backend + model service). */
+export const voiceJournalSupported = () =>
+  isRealFirebaseConfigured && typeof window !== "undefined" && typeof window.MediaRecorder !== "undefined" &&
+  Boolean(navigator.mediaDevices?.getUserMedia);
+
+/**
+ * Voice entry: uploads the recording; the server transcribes it (Whisper), scores voice + text
+ * emotion (WavLM + SoulScribe fusion), and saves the PII-scrubbed transcript. Audio is not stored.
+ */
+export async function addVoiceJournalEntry({ audio, privacy, tags, reflection }) {
+  if (!isRealFirebaseConfigured) {
+    throw new Error("Voice journaling needs the live backend. Switch out of Sandbox mode to use it.");
+  }
+  const query = {
+    visibility: privacy === "shared" ? "shared" : "private",
+    tags: (tags || []).map((t) => t.trim().replace(/,/g, " ")).filter(Boolean).slice(0, 20).join(",") || undefined,
+    reflection_response: reflection && reflection.trim() ? reflection.trim() : undefined
+  };
+  const { data } = await api.upload("/journal-entries/audio", audio, {
+    query,
+    contentType: (audio.type || "audio/webm").split(";")[0],
+    timeoutMs: 180000 // first run loads Whisper + WavLM; transcription can take a while
+  });
+  return fromApiEntry(data);
+}
+
+/** Which AI models the backend is actually using (shown as a status chip). */
+export async function getModelStatus() {
+  if (!isRealFirebaseConfigured) return { mode: "sandbox" };
+  try {
+    const { data } = await api.get("/health/model", undefined, { timeoutMs: 5000 });
+    if (data?.adapter === "mock") return { mode: "builtin" };
+    if (data?.status !== "healthy") return { mode: "offline" };
+    const m = data.upstream?.models || {};
+    return {
+      mode: "live",
+      voice: Boolean(m.audio_wavlm && m.whisper),
+      text: Boolean(m.text_soulscribe),
+      device: data.upstream?.device || null
+    };
+  } catch {
+    return { mode: "offline" };
+  }
 }
 
 export async function removeJournalEntry(entryId) {

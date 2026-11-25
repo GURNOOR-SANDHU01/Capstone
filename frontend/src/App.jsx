@@ -39,6 +39,11 @@ import {
   AdminAuditLogsView
 } from "./components/admin/AdminPortalViews";
 
+import GoogleFitDashboardView from "./components/patient/GoogleFitDashboardView";
+import DoctorWellnessView from "./components/doctor/DoctorWellnessView";
+import AdminUserMgmtView from "./components/admin/AdminUserMgmtView";
+import { homeTabFor, pathToTab, tabToPath } from "./config/routes";
+
 import { ROLES } from "./constants/roles";
 import { useAuth } from "./hooks/useAuth";
 import { useJournal } from "./hooks/useJournal";
@@ -61,11 +66,35 @@ function App() {
   // Authoritative Profile Completion evaluation
   const { isComplete, firstMissingStep } = useProfileCompletion(currentUser);
 
-  const defaultTabFor = (role) =>
-    role === ROLES.ADMIN ? "admin-dashboard" : role === ROLES.DOCTOR ? "doctor-dashboard" : "dashboard";
+  const defaultTabFor = (role) => homeTabFor(role);
+  // Without an explicit choice, the tab comes from the URL (deep links, OAuth return to /dashboard/google-fit)
   const activeTab =
-    currentUser && tabState.uid === currentUser.uid && tabState.tab ? tabState.tab : defaultTabFor(currentUser?.role);
-  const setActiveTab = (tab) => setTabState({ uid: currentUser?.uid ?? null, tab });
+    currentUser && tabState.uid === currentUser.uid && tabState.tab
+      ? tabState.tab
+      : pathToTab(currentUser?.role, window.location.pathname);
+  const setActiveTab = (tab) => {
+    setTabState({ uid: currentUser?.uid ?? null, tab });
+    const path = tabToPath(currentUser?.role, tab);
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+  };
+
+  // Keep the address bar on the canonical path of the current page (query string is preserved)
+  useEffect(() => {
+    if (!currentUser) return;
+    const path = tabToPath(currentUser.role, activeTab);
+    if (window.location.pathname !== path) {
+      window.history.replaceState(null, "", `${path}${window.location.search}${window.location.hash}`);
+    }
+  }, [currentUser, activeTab]);
+
+  // Browser back/forward
+  useEffect(() => {
+    const onPop = () => {
+      if (currentUser) setTabState({ uid: currentUser.uid, tab: pathToTab(currentUser.role, window.location.pathname) });
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [currentUser]);
 
   // Dismiss notification toast after delay
   useEffect(() => {
@@ -164,6 +193,7 @@ function App() {
               currentUser={currentUser}
             />
           )}
+          {activeTab === "google-fit" && <GoogleFitDashboardView onNotification={handleTriggerNotification} />}
           {activeTab === "companion" && (
             <CompanionView currentUser={currentUser} />
           )}
@@ -182,6 +212,7 @@ function App() {
               error={journal.error}
               onReload={journal.reload}
               onAdd={journal.addEntry}
+              onAddVoice={journal.addVoiceEntry}
               onDelete={journal.removeEntry}
               onSetVisibility={journal.setVisibility}
               onEdit={journal.editEntry}
@@ -210,6 +241,7 @@ function App() {
             />
           )}
           {activeTab === "doctor-shared-journals" && <DoctorSharedJournalsView />}
+          {activeTab === "doctor-wellness" && <DoctorWellnessView />}
           {activeTab === "doctor-appointments" && (
             <DoctorAppointmentsView
               onNotification={handleTriggerNotification}
@@ -231,6 +263,7 @@ function App() {
           {activeTab === "admin-dashboard" && (
             <AdminDashboardView onNavigate={(tab) => setActiveTab(tab)} />
           )}
+          {activeTab === "admin-users" && <AdminUserMgmtView currentUser={currentUser} onNotification={handleTriggerNotification} />}
           {activeTab === "admin-safety" && <AdminSafetyCenterView onNotification={handleTriggerNotification} />}
           {activeTab === "admin-doctors" && (
             <AdminDoctorMgmtView onNotification={handleTriggerNotification} />

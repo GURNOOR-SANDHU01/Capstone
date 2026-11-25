@@ -9,7 +9,7 @@ function errorHandler(err, req, res, next) {
     message: err.message,
     name: err.name,
     code: err.code,
-    path: req.originalUrl,
+    path: req.originalUrl.split('?')[0],
     method: req.method
   });
 
@@ -45,6 +45,11 @@ function errorHandler(err, req, res, next) {
 
   // Server errors never expose internal messages, codes or stack traces (details are logged above).
   // Client errors (4xx) are raised deliberately by the application and returned as-is.
+  // Exception: errors the application raised on purpose with a user-safe message (err.expose === true),
+  // e.g. 503 VOICE_ANALYSIS_UNAVAILABLE, so the client can show a meaningful message.
+  if (statusCode >= 500 && err.expose === true && typeof err.code === 'string') {
+    return error(res, err.code, err.message, statusCode);
+  }
   if (statusCode >= 500) {
     return error(res, 'INTERNAL_ERROR', 'An unexpected internal server error occurred.', statusCode);
   }

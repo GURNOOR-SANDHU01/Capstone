@@ -28,6 +28,28 @@ at runtime; the Express backend can call such a service through `MODEL_API_BASE_
 
 ## Running locally
 
+**One command** (after the one-time setup below): opens a window each for the AI model service
+(:8000), the backend (:5000) and the frontend (:5173), waits until each is healthy, and reports
+which AI models are live. Services that are already running are left alone.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-all.ps1     # then open http://localhost:5173
+```
+
+One-time setup for the AI models (GPU recommended; see `model_service/README.md`):
+
+```powershell
+cd model_service
+python -m venv .venv
+.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
+.venv\Scripts\pip install -r requirements.txt     # also needs ffmpeg on PATH
+```
+
+The model weights (`Sentic Med AI_ML/`) are not in git; get them from the ML team's Drive.
+`backend/.env` needs `USE_MOCK_MODELS=false` and `MODEL_API_BASE_URL=http://localhost:8000`,
+and, for Google Fit, `GOOGLE_FIT_CLIENT_ID/SECRET` + `TOKEN_ENCRYPTION_KEY`
+(see `backend/docs/GOOGLE_FIT_AND_SECURITY.md`).
+
 ### 1. Backend
 ```bash
 cd backend

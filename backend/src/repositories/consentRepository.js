@@ -1,5 +1,6 @@
 const { db, Timestamp, COLLECTIONS } = require('../config/firebase/firestore');
 const { fromDoc } = require('../utils/docNormalizer');
+const { pagedQuery } = require('./indexedQuery');
 
 class ConsentRepository {
   constructor() {
@@ -144,17 +145,15 @@ class ConsentRepository {
   }
 
   async listAuditLogs(userId) {
-    const snap = await this.auditCollection
-      .where('user_id', '==', userId)
-      .orderBy('action_timestamp', 'desc')
-      .limit(50)
-      .get();
-
-    const logs = [];
-    snap.forEach((doc) => {
-      logs.push(fromDoc(doc));
+    const { items } = await pagedQuery({
+      collection: this.auditCollection,
+      equality: { user_id: userId },
+      orderBy: { field: 'action_timestamp', direction: 'desc' },
+      page: 1,
+      limit: 50,
+      label: 'consent_audit_logs.listAuditLogs'
     });
-    return logs;
+    return items;
   }
 }
 

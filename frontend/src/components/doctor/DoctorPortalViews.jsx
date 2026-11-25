@@ -24,6 +24,7 @@ import {
 import { describeError } from '../../services/apiClient';
 import { useAppointments } from '../../hooks/useAppointments';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { useSelectedPatient } from '../../hooks/useSelectedPatient';
 import { AppointmentCard } from '../appointments/AppointmentCard';
 import { DoctorScheduleDrawer } from '../appointments/DoctorScheduleDrawer';
 import { CareInstructionDrawer } from './CareInstructionDrawer';
@@ -317,7 +318,7 @@ export function DoctorConsultationsView() {
 }
 
 /** Patient picker shared by the doctor views below. */
-function PatientPicker({ roster, value, onChange }) {
+export function PatientPicker({ roster, value, onChange }) {
   const patients = roster.data || [];
   if (roster.loading || roster.error) return <LoadState loading={roster.loading} error={roster.error} onRetry={roster.reload} label="Loading patients..." />;
   if (patients.length === 0) {
@@ -336,12 +337,6 @@ function PatientPicker({ roster, value, onChange }) {
       ))}
     </select>
   );
-}
-
-/** Selected patient id, defaulting to the first patient in the roster. */
-function useSelectedPatient(roster) {
-  const [patientId, setPatientId] = useState("");
-  return [patientId || roster.data?.[0]?.id || "", setPatientId];
 }
 
 // Doctor Shared Journal Review Sub-view

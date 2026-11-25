@@ -1,0 +1,48 @@
+{
+  "model": "SamLowe/roberta-base-go_emotions",
+  "tuned_on": "GoEmotions dev (5,426)",
+  "evaluated_on": "GoEmotions test (5,427), never used for tuning",
+  "test_threshold_0.5": {
+    "macro_f1": 0.4426,
+    "micro_f1": 0.559,
+    "macro_precision": 0.5712,
+    "macro_recall": 0.3879
+  },
+  "test_tuned_thresholds": {
+    "macro_f1": 0.5143,
+    "micro_f1": 0.5639,
+    "macro_precision": 0.5209,
+    "macro_recall": 0.5415
+  },
+  "test_ekman6_top1_accuracy": 0.8283,
+  "test_ekman6_rows": 3821,
+  "test_per_label_f1": {
+    "admiration": 0.708,
+    "amusement": 0.826,
+    "anger": 0.509,
+    "annoyance": 0.343,
+    "approval": 0.42,
+    "caring": 0.392,
+    "confusion": 0.445,
+    "curiosity": 0.567,
+    "desire": 0.509,
+    "disappointment": 0.335,
+    "disapproval": 0.436,
+    "disgust": 0.478,
+    "embarrassment": 0.444,
+    "excitement": 0.452,
+    "fear": 0.659,
+    "gratitude": 0.919,
+    "grief": 0.333,
+    "joy": 0.605,
+    "love": 0.804,
+    "nervousness": 0.391,
+    "optimism": 0.508,
+    "pride": 0.56,
+    "realization": 0.23,
+    "relief": 0.231,
+    "remorse": 0.638,
+    "sadness": 0.54,
+    "surprise": 0.601
+  }
+}

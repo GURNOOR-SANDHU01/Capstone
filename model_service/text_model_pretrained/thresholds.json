@@ -1,0 +1,32 @@
+{
+  "model": "SamLowe/roberta-base-go_emotions",
+  "thresholds": {
+    "admiration": 0.31,
+    "amusement": 0.29,
+    "anger": 0.32,
+    "annoyance": 0.2,
+    "approval": 0.25,
+    "caring": 0.19,
+    "confusion": 0.37,
+    "curiosity": 0.22,
+    "desire": 0.3,
+    "disappointment": 0.18,
+    "disapproval": 0.25,
+    "disgust": 0.13,
+    "embarrassment": 0.35,
+    "excitement": 0.41,
+    "fear": 0.17,
+    "gratitude": 0.36,
+    "grief": 0.05,
+    "joy": 0.5,
+    "love": 0.19,
+    "nervousness": 0.18,
+    "optimism": 0.43,
+    "pride": 0.05,
+    "realization": 0.49,
+    "relief": 0.1,
+    "remorse": 0.37,
+    "sadness": 0.21,
+    "surprise": 0.16
+  }
+}

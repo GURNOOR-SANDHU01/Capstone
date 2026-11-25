@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   PenSquare,
   Search,
@@ -14,12 +14,45 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
-  Pencil
+  Pencil,
+  Mic,
+  Type,
+  Cpu
 } from 'lucide-react';
 import { MOOD_DEFINITIONS } from '../../data/mockData';
 import { describeError } from '../../services/apiClient';
 import { useDraftState } from '../../hooks/useDraftState';
 import SentimentBar from '../SentimentBar';
+import VoiceRecorder from '../journal/VoiceRecorder';
+import { voiceJournalSupported, getModelStatus } from '../../services/journalService';
+
+const DECISION_TEXT = {
+  agree: "Your voice and your words point to the same emotion.",
+  conflict: "Your voice and your words differed; your words were weighted more (70/30).",
+  voice_neutral: "Your voice sounded neutral, so the result is based on your words.",
+  voice_only_no_text_model: "Based on your tone of voice (text model not installed yet).",
+  no_speech: "No words were detected, so the result is based on your tone of voice."
+};
+
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+function ModelStatusChip({ status }) {
+  if (!status) return null;
+  let label;
+  let tone = "badge-muted";
+  if (status.mode === "sandbox") label = "Sandbox: demo analysis";
+  else if (status.mode === "builtin") label = "AI: built-in rules (model service not connected)";
+  else if (status.mode === "offline") label = "AI model service offline: using built-in rules";
+  else {
+    tone = "badge-primary";
+    label = `AI models live${status.device ? ` (${status.device.toUpperCase()})` : ""}: voice ${status.voice ? "on" : "off"}, text ${status.text ? "on" : "built-in"}`;
+  }
+  return (
+    <span className={`badge ${tone}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+      <Cpu size={12} /> {label}
+    </span>
+  );
+}
 
 export default function JournalView({
   entries = [],
@@ -27,6 +60,7 @@ export default function JournalView({
   error = "",
   onReload,
   onAdd,
+  onAddVoice,
   onDelete,
   onSetVisibility,
   onEdit,
@@ -45,6 +79,50 @@ export default function JournalView({
   const [busyEntryId, setBusyEntryId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [editing, setEditing] = useState(null); // { id, text, reflection, mood }
+  const [composeMode, setComposeMode] = useDraftState("journal.mode", "text"); // 'text' | 'voice'
+  const [modelStatus, setModelStatus] = useState(null);
+  const canUseVoice = Boolean(onAddVoice) && voiceJournalSupported();
+  const voiceMode = composeMode === "voice" && canUseVoice;
+  const voiceModelDown = modelStatus && (modelStatus.mode === "offline" || modelStatus.mode === "builtin" ||
+    (modelStatus.mode === "live" && !modelStatus.voice));
+
+  useEffect(() => {
+    let cancelled = false;
+    getModelStatus().then((s) => { if (!cancelled) setModelStatus(s); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const notifyIfHighSeverity = (entry) => {
+    if (entry?.severity === "high") {
+      onNotification(
+        "Support Is Available",
+        "Your entry suggests you may be going through a lot. If you are in danger, call your local emergency number or a crisis line now."
+      );
+    }
+  };
+
+  /** Returns true when the voice entry was saved (the recorder then resets). */
+  const handleSaveVoice = async (audio) => {
+    if (saving) return false;
+    setSaving(true);
+    const submitted = { tags, reflection: reflectionText };
+    try {
+      const created = await onAddVoice({ audio, privacy, tags, reflection: reflectionText });
+      onNotification(
+        "Voice Entry Saved",
+        `Transcribed and saved (${created.privacy === "shared" ? "shared with your consented doctors" : "private"}). Detected emotion: ${cap(created.detectedEmotion) || created.mood}.`
+      );
+      notifyIfHighSeverity(created);
+      setTags((current) => (current === submitted.tags ? ["reflection"] : current));
+      setReflectionText((current) => (current === submitted.reflection ? "" : current));
+      return true;
+    } catch (err) {
+      onNotification("Voice Entry Failed", describeError(err));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSaveEdit = async () => {
     if (!editing.text.trim()) {
@@ -103,12 +181,7 @@ export default function JournalView({
         "Journal Saved",
         `Entry saved (${created.privacy === "shared" ? "Shared with your consented doctors" : "Private"}).`
       );
-      if (created.severity === "high") {
-        onNotification(
-          "Support Is Available",
-          "Your entry suggests you may be going through a lot. If you are in danger, call your local emergency number or a crisis line now."
-        );
-      }
+      notifyIfHighSeverity(created);
       // Reset only after the server confirmed the save, and never discard anything typed meanwhile
       setText((current) => (current === submitted.text ? "" : current));
       setTags((current) => (current === submitted.tags ? ["reflection"] : current));
@@ -166,6 +239,9 @@ export default function JournalView({
         <p style={{ fontSize: 14, color: "var(--color-text-muted)" }}>
           Log your daily thoughts, practice CBT reframing, and manage clinical visibility permissions.
         </p>
+        <div style={{ marginTop: 8 }}>
+          <ModelStatusChip status={modelStatus} />
+        </div>
       </div>
 
       <div className="app-split-2-1">
@@ -173,7 +249,39 @@ export default function JournalView({
         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <PenSquare size={18} color="var(--color-primary-dark)" />
-            <h2 style={{ fontSize: 16, fontWeight: 700 }}>Write New Entry</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 700 }}>New Entry</h2>
+          </div>
+
+          {/* Entry mode: type or speak */}
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 6 }}>
+              HOW DO YOU WANT TO JOURNAL?
+            </label>
+            <div className="segmented-control">
+              <button
+                type="button"
+                onClick={() => setComposeMode("text")}
+                className={`segmented-tab ${!voiceMode ? "active" : ""}`}
+              >
+                <Type size={15} />
+                <span>Type</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setComposeMode("voice")}
+                className={`segmented-tab ${voiceMode ? "active" : ""}`}
+                disabled={!canUseVoice}
+                title={canUseVoice ? "Record a voice entry" : "Voice journaling needs the live portal and a browser with microphone support"}
+              >
+                <Mic size={15} />
+                <span>Speak</span>
+              </button>
+            </div>
+            {!canUseVoice && (
+              <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 6 }}>
+                Voice journaling is available in the live portal on a browser with microphone support.
+              </div>
+            )}
           </div>
 
           {/* Privacy Toggle (Private vs Shared with Doctor) */}
@@ -206,6 +314,22 @@ export default function JournalView({
             </div>
           </div>
 
+          {voiceMode ? (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 6 }}>
+                VOICE ENTRY
+              </label>
+              {voiceModelDown && (
+                <div role="alert" style={{ fontSize: 12, color: "#C0392B", marginBottom: 8 }}>
+                  The voice model service is not available right now, so saving a recording will fail. You can type your entry instead.
+                </div>
+              )}
+              <VoiceRecorder onSubmit={handleSaveVoice} busy={saving} />
+              <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 6 }}>
+                Your mood is detected from your voice and words. You can correct it afterwards with Edit.
+              </div>
+            </div>
+          ) : (<>
           {/* Mood Selector */}
           <div>
             <label style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", display: "block", marginBottom: 8 }}>
@@ -267,6 +391,7 @@ export default function JournalView({
               {text.length} / 2000 characters
             </div>
           </div>
+          </>)}
 
           {/* CBT Reflection Prompt */}
           <div style={{ background: "var(--color-bg)", padding: 14, borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}>
@@ -313,7 +438,8 @@ export default function JournalView({
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Buttons (voice entries are saved from the recorder) */}
+          {!voiceMode && (
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
             <button
               type="button"
@@ -332,6 +458,7 @@ export default function JournalView({
               <span>{saving ? "Saving..." : "Save Entry"}</span>
             </button>
           </div>
+          )}
         </div>
 
         {/* Right Column: Search, Filter, & Memory Bank */}
@@ -403,6 +530,11 @@ export default function JournalView({
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span className="badge badge-primary">{item.mood}</span>
+                      {item.inputSource === "audio" && (
+                        <span className="badge badge-muted" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10 }}>
+                          <Mic size={11} /> Voice
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleToggleVisibility(item)}
@@ -482,6 +614,27 @@ export default function JournalView({
                     <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--color-text)" }}>
                       {item.text}
                     </p>
+                  )}
+
+                  {(item.voiceAnalysis || (item.detectedEmotion && item.isMockAnalysis === false && item.inputSource)) && (
+                    <div style={{ background: "var(--color-bg)", padding: 8, borderRadius: 6, fontSize: 11, display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                        <Brain size={12} color="var(--color-primary-dark)" />
+                        <strong>AI detected: {cap(item.detectedEmotion)}</strong>
+                        {item.emotionConfidence !== null && item.emotionConfidence !== undefined && (
+                          <span style={{ color: "var(--color-text-muted)" }}>({Math.round(item.emotionConfidence * 100)}%)</span>
+                        )}
+                        {item.voiceAnalysis?.voiceSays && (
+                          <span className="badge badge-muted" style={{ fontSize: 10 }}>Voice: {cap(item.voiceAnalysis.voiceSays)}</span>
+                        )}
+                        {item.voiceAnalysis?.textSays && (
+                          <span className="badge badge-muted" style={{ fontSize: 10 }}>Words: {cap(item.voiceAnalysis.textSays)}</span>
+                        )}
+                      </div>
+                      {DECISION_TEXT[item.voiceAnalysis?.decision] && (
+                        <span style={{ color: "var(--color-text-muted)" }}>{DECISION_TEXT[item.voiceAnalysis.decision]}</span>
+                      )}
+                    </div>
                   )}
 
                   {item.reflectionPrompt && (

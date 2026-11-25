@@ -48,14 +48,41 @@ const CRISIS_REPLY =
   "(for example 988 in the US, or Tele-MANAS 14416 in India). You can also reach out to someone you trust. " +
   "I'm a reflection companion, not a substitute for professional care.";
 
+/** Voice input is available only in the live portal (it needs the model service) on a browser that can record. */
+export const companionVoiceSupported = () =>
+  isRealFirebaseConfigured && typeof window !== "undefined" && typeof window.MediaRecorder !== "undefined" &&
+  Boolean(navigator.mediaDevices?.getUserMedia);
+
+/**
+ * Transcribes a spoken companion message and scores its emotion (voice tone + words).
+ * Uses the no-storage preview endpoint: neither the audio nor the transcript is saved.
+ * Resolves { transcript, emotion, voiceSays, textSays, decision, detectedEmotions }.
+ */
+export async function transcribeCompanionVoice(audio) {
+  const { data } = await api.upload("/analysis/audio", audio, {
+    contentType: (audio.type || "audio/webm").split(";")[0],
+    timeoutMs: 180000
+  });
+  return {
+    transcript: (data.transcript || "").trim(),
+    emotion: data.emotion || data.detected_emotions?.primary_state || null,
+    voiceSays: data.voice_raw || data.voice_says || null,
+    textSays: data.text_says || null,
+    decision: data.decision || null,
+    detectedEmotions: data.detected_emotions || null
+  };
+}
+
 /**
  * Companion reply. Live: emotion -> safety -> CBT reflection via the backend (no chat text is stored).
  * Sandbox: the local rule-based replies above.
  */
-export const getCompanionReply = async (userMessage) => {
+export const getCompanionReply = async (userMessage, { voiceEmotions = null } = {}) => {
   if (!isRealFirebaseConfigured) return generateCompanionReply(userMessage);
 
-  const { data: emotions } = await api.post("/analysis/emotions", { content: userMessage });
+  // A spoken message already has an emotion from the voice + text models; typed text is analysed here.
+  // The safety check below always runs on the words (and keeps the server's crisis-language floor).
+  const emotions = voiceEmotions || (await api.post("/analysis/emotions", { content: userMessage })).data;
   const { data: safety } = await api.post("/analysis/safety", {
     content: userMessage,
     detected_emotions: {

@@ -1,5 +1,6 @@
 const { db, Timestamp, COLLECTIONS } = require('../config/firebase/firestore');
 const { fromDoc } = require('../utils/docNormalizer');
+const { pagedQuery } = require('./indexedQuery');
 
 class MemoryRepository {
   constructor() {
@@ -33,26 +34,14 @@ class MemoryRepository {
   }
 
   async listByUser(userId, { memory_type, min_importance, page = 1, limit = 20 }) {
-    let query = this.memoriesCollection.where('user_id', '==', userId);
-
-    if (memory_type) {
-      query = query.where('memory_type', '==', memory_type);
-    }
-    if (min_importance !== undefined) {
-      query = query.where('importance_score', '>=', min_importance);
-    }
-
-    query = query.orderBy('created_at', 'desc');
-
-    const offset = (page - 1) * limit;
-    const snapshot = await query.limit(limit + 1).offset(offset).get();
-
-    const items = [];
-    const hasMore = snapshot.docs.length > limit;
-    const docs = hasMore ? snapshot.docs.slice(0, limit) : snapshot.docs;
-
-    docs.forEach((doc) => {
-      items.push(fromDoc(doc));
+    const { items, hasMore } = await pagedQuery({
+      collection: this.memoriesCollection,
+      equality: { user_id: userId, memory_type: memory_type || undefined },
+      ranges: [{ field: 'importance_score', op: '>=', value: min_importance }],
+      orderBy: { field: 'created_at', direction: 'desc' },
+      page,
+      limit,
+      label: 'memories.listByUser'
     });
 
     return {

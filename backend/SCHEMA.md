@@ -386,3 +386,56 @@ See `firestore.indexes.json` (26 composite indexes, verified against Firestore's
 `chat_sessions` exists in the live database (1 document: `chat_id`, `title`, `user_id`,
 `updated_at` stored as a **string**) but is not used by any code. Left untouched; see
 `docs/data-reconciliation-plan.md` (A14).
+
+---
+
+## Google Fit, voice journal and account security additions (November 2026)
+
+### `fitness_connections`
+
+**Document ID:** user UID. One per patient. Server-only (Firestore rules deny all client access).
+
+| Field | Type | Description |
+|---|---|---|
+| `user_id` | string | Owner UID |
+| `provider` | string | `google_fit` |
+| `status` | string | `pending` \| `connected` \| `revoked` \| `disconnected` |
+| `scopes` | array | Granted read-only Fit scopes (activity, heart_rate, sleep) |
+| `encrypted_refresh_token` | string \| null | **AES-256-GCM ciphertext** (`v1.<iv>.<tag>.<ct>`), bound to the UID as AAD. Never returned by any endpoint. `null` after revocation |
+| `pending_nonce` / `pending_expires_at` | string / number | One-time nonce for the OAuth `state` (10 min) |
+| `connected_at`, `last_sync_at` | timestamp | |
+| `last_sync_status` | string | `success` \| `partial` \| `failed` |
+| `last_sync_attempt_ms` | number | Sync throttle (1 per minute) |
+| `last_error` | string \| null | User-safe message only |
+
+Access tokens are never stored; they live in server memory for under an hour.
+
+### `fitness_daily_metrics`
+
+**Document ID:** `<uid>_<YYYY-MM-DD>` (local day of the user). Upserted by each sync.
+
+| Field | Type | Description |
+|---|---|---|
+| `user_id`, `date`, `provider`, `synced_at` | | |
+| `steps`, `active_minutes`, `calories` | number \| null | Daily totals |
+| `heart_rate_avg`, `heart_rate_min`, `heart_rate_max` | number \| null | bpm |
+| `sleep_minutes` | number \| null | Sleep sessions ending that day |
+
+`null` means "no data", never zero. Queries are equality-only on `user_id` (no composite index).
+
+### Field additions
+
+- `users.account_status`: `active` \| `deactivated`. Mirrors the Firebase Auth `disabled` flag, which is the source of truth.
+- `journal_entries.detected_emotions.voice_analysis`: for `input_source: "audio"` entries: `{ decision, text_says, voice_says, voice_raw, voice_scores, fused_scores }`.
+- `journal_entries.detected_emotions.provenance`: which model or adapter produced the result.
+- `admin_audit_logs.action` new values: `ACTIVATE_ACCOUNT`, `DEACTIVATE_ACCOUNT`, `VIEW_PATIENT_WELLNESS` (each doctor read of a patient's wellness summary).
+
+### Where each spec entity lives
+
+| Entity | Storage |
+|---|---|
+| Users & credentials | Firebase Authentication (password hashing, sign-in throttling) + `users` profile |
+| Roles | Firebase custom claim `role` (only the Admin SDK can set it); `users.role` is a display mirror |
+| Patient login / intake responses | `users.onboarding.screening` (patient-only onboarding) |
+| Google Fit connections & metrics | `fitness_connections`, `fitness_daily_metrics` |
+| Audit logs | `admin_audit_logs` (privileged actions + sensitive views), `consent_audit_logs` |

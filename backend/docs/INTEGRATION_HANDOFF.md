@@ -48,6 +48,23 @@ object directly (an `{ success, data }` envelope is also accepted). Extra fields
 | `/api/analysis/reflection` | `{ content, primary_emotion, sentiment_score, intent, extracted_themes[] }` | `prompt_text` (string); optional `prompt_type`, `cbt_technique_used` |
 | `/api/analysis/memories` | `{ content, primary_emotion }` | array of `{ text, type, score (0–1) }` |
 
+| `/api/analysis/audio` | `multipart/form-data`, field `file` (webm/ogg/wav/mp3) | `transcript` (string), `detected_emotions` { `primary_state`, `confidence`, `sentiment_score` }; optional `decision`, `text_says`, `voice_says`, `voice_raw`, `voice_scores`, `fused_scores` |
+
+The reference implementation is `model_service/server.py` (WavLM voice model + Whisper, plus SoulScribe
+text fusion once that model is installed). Run it with `model_service/start.ps1`.
+
+### Voice journal (backend routes)
+
+- `POST /api/journal-entries/audio?visibility=&tags=a,b&reflection_response=&self_reported_emotion=`:
+  the body is the raw recording (`Content-Type: audio/webm` etc., max 15 MB). The backend sends it to
+  the model service, stores the PII-scrubbed transcript as the entry text (`input_source: "audio"`,
+  `entry_type: "voice_journal"`) with the fused emotion and `detected_emotions.voice_analysis`, and then
+  runs the usual intent/safety/reflection/memory steps. **The audio is never stored.**
+- `POST /api/analysis/audio`: the same analysis with nothing stored (preview).
+- Voice has **no rule-based fallback**: without the model service these return
+  `503 VOICE_ANALYSIS_UNAVAILABLE` (the message is shown to the user); a recording with no words returns
+  `422 NO_SPEECH_DETECTED`. `MODEL_API_AUDIO_TIMEOUT_MS` (default 120000) sets the timeout.
+
 ### Behaviour already built in
 
 - Results are validated against these contracts (`RESULT_SCHEMAS`). On timeout, HTTP error or an
