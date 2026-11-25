@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import MoodChart from '../MoodChart';
 import SentimentBar from '../SentimentBar';
-import { calculateWellnessStats, getWeeklyChartData, findTagPatterns, findWeekdayPattern } from '../../services/insightService';
+import { calculateWellnessStats, getWeeklyChartData, findTagPatterns, findWeekdayPattern, buildEmotionScoreboard } from '../../services/insightService';
 import { listMemories, sendMemoryFeedback } from '../../services/clinicalApi';
 import { isRealFirebaseConfigured } from '../../services/firebase';
 import { describeError } from '../../services/apiClient';
@@ -23,6 +23,8 @@ export default function InsightsView({ entries = [], onNotification }) {
   const chartData = getWeeklyChartData(entries);
   const tagPatterns = findTagPatterns(entries);
   const weekdayPattern = findWeekdayPattern(entries);
+  const scoreboard = buildEmotionScoreboard(entries);
+  const maxCount = scoreboard.rows[0]?.count || 1;
   const memories = useAsyncData(listMemories, [entries.length], []);
   const [feedbackGiven, setFeedbackGiven] = useState({});
 
@@ -91,6 +93,34 @@ export default function InsightsView({ entries = [], onNotification }) {
           <div className="card">
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>7-Day Sentiment Trajectory</h3>
             <MoodChart data={chartData} />
+          </div>
+
+          {/* Emotion Scoreboard: fine-grained emotions from the text model */}
+          <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700 }}>Emotion Scoreboard</h3>
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: -6 }}>
+              Fine-grained emotions (27 GoEmotions states) the AI model detected across{" "}
+              {scoreboard.analysedEntries} {scoreboard.analysedEntries === 1 ? "entry" : "entries"}.
+            </p>
+            {scoreboard.rows.length === 0 ? (
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+                {isRealFirebaseConfigured
+                  ? "Write or record a journal entry while the AI model service is running to fill the scoreboard."
+                  : "The scoreboard needs the live AI models (not available in Sandbox mode)."}
+              </p>
+            ) : (
+              scoreboard.rows.map((r) => (
+                <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+                  <span style={{ width: 104, flexShrink: 0, fontWeight: 600 }}>{r.label.charAt(0).toUpperCase() + r.label.slice(1)}</span>
+                  <div style={{ flex: 1, height: 8, background: "#F0F0EE", borderRadius: 6, overflow: "hidden" }}>
+                    <div style={{ width: `${(r.count / maxCount) * 100}%`, height: "100%", background: "var(--color-primary)", borderRadius: 6 }} />
+                  </div>
+                  <span style={{ width: 120, textAlign: "right", color: "var(--color-text-muted)" }}>
+                    {r.count}× · avg {Math.round(r.avgScore * 100)}%
+                  </span>
+                </div>
+              ))
+            )}
           </div>
 
           {/* Multimodal Channel Analysis */}

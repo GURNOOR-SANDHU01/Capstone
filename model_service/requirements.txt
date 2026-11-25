@@ -1,0 +1,15 @@
+# Install torch first with the CUDA build that matches your GPU driver, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# (CPU-only also works, just slower: pip install torch)
+transformers>=4.44,<5
+soundfile
+emoji
+scikit-learn
+pandas
+tqdm
+matplotlib
+seaborn
+fastapi
+uvicorn[standard]
+python-multipart
+# System requirement: ffmpeg on PATH (or set FFMPEG_PATH) to decode browser recordings (webm/ogg)

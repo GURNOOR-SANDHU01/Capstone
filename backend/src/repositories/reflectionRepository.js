@@ -1,5 +1,6 @@
 const { db, Timestamp, COLLECTIONS } = require('../config/firebase/firestore');
 const { fromDoc } = require('../utils/docNormalizer');
+const { pagedQuery } = require('./indexedQuery');
 
 class ReflectionRepository {
   constructor() {
@@ -32,23 +33,13 @@ class ReflectionRepository {
   }
 
   async listByUser(userId, { entry_id, page = 1, limit = 20 }) {
-    let query = this.collection.where('user_id', '==', userId);
-
-    if (entry_id) {
-      query = query.where('entry_id', '==', entry_id);
-    }
-
-    query = query.orderBy('generated_at', 'desc');
-
-    const offset = (page - 1) * limit;
-    const snapshot = await query.limit(limit + 1).offset(offset).get();
-
-    const items = [];
-    const hasMore = snapshot.docs.length > limit;
-    const docs = hasMore ? snapshot.docs.slice(0, limit) : snapshot.docs;
-
-    docs.forEach((doc) => {
-      items.push(fromDoc(doc));
+    const { items, hasMore } = await pagedQuery({
+      collection: this.collection,
+      equality: { user_id: userId, entry_id: entry_id || undefined },
+      orderBy: { field: 'generated_at', direction: 'desc' },
+      page,
+      limit,
+      label: 'reflection_prompts.listByUser'
     });
 
     return {

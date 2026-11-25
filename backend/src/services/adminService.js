@@ -17,6 +17,7 @@ const publicUserFields = (u) => ({
   email: u.email || '',
   role: u.role || ROLES.PATIENT,
   created_at: u.created_at || null,
+  account_status: u.account_status === 'deactivated' ? 'deactivated' : 'active',
   doctor_profile: u.doctor_profile || null
 });
 
@@ -69,6 +70,35 @@ class AdminService {
     await setUserRole(actor, record.uid, ROLES.DOCTOR);
     if (Object.keys(doctorProfile).length) return this.updateDoctorProfile(actor, record.uid, doctorProfile);
     return publicUserFields(await userRepository.getById(record.uid));
+  }
+
+  /**
+   * Activates or deactivates an account. Deactivating disables the Firebase Auth user and
+   * revokes its refresh tokens, so every API call with an existing ID token is rejected
+   * immediately (authenticate() verifies with checkRevoked=true).
+   */
+  async setAccountStatus(actor, uid, active) {
+    if (actor.uid === uid) {
+      throw httpError(400, 'SELF_STATUS_CHANGE', 'Administrators cannot deactivate their own account.');
+    }
+    try {
+      await auth.getUser(uid);
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') throw httpError(404, 'USER_NOT_FOUND', 'No account exists with this ID.');
+      throw err;
+    }
+    await auth.updateUser(uid, { disabled: !active });
+    if (!active) await auth.revokeRefreshTokens(uid);
+    const status = active ? 'active' : 'deactivated';
+    const updated = await userRepository.setFields(uid, { account_status: status });
+    await adminAuditRepository.log({
+      actorId: actor.uid,
+      actorRole: actor.role,
+      action: active ? 'ACTIVATE_ACCOUNT' : 'DEACTIVATE_ACCOUNT',
+      targetId: uid,
+      details: { account_status: status }
+    });
+    return updated ? publicUserFields(updated) : { id: uid, account_status: status };
   }
 
   async stats() {

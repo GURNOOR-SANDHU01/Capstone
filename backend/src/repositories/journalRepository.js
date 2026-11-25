@@ -1,5 +1,6 @@
 const { db, Timestamp, COLLECTIONS } = require('../config/firebase/firestore');
 const { fromDoc } = require('../utils/docNormalizer');
+const { pagedQuery } = require('./indexedQuery');
 
 class JournalRepository {
   constructor() {
@@ -25,7 +26,16 @@ class JournalRepository {
         confidence: data.detected_emotions?.confidence ?? 0.5,
         sentiment_score: data.detected_emotions?.sentiment_score ?? 0.0,
         all_28_states: data.detected_emotions?.all_28_states || {},
+        // Emotions above the model's per-label threshold, strongest first: [{ label, score }]
+        fine_grained_emotions: Array.isArray(data.detected_emotions?.fine_grained_emotions)
+          ? data.detected_emotions.fine_grained_emotions.slice(0, 10)
+          : [],
+        // Text model collapsed to the 6 core (Ekman) emotions, if the model service returned them
+        ekman_scores: data.detected_emotions?.ekman_scores || null,
         vocal_prosody: data.detected_emotions?.vocal_prosody || null,
+        // Voice entries only: how the voice model and text model were combined
+        voice_analysis: data.detected_emotions?.voice_analysis || null,
+        provenance: data.detected_emotions?.provenance || null,
         corrected_emotion: data.detected_emotions?.corrected_emotion || null,
         correction_reason: data.detected_emotions?.correction_reason || null,
         user_correction_timestamp: data.detected_emotions?.user_correction_timestamp || null
@@ -74,43 +84,40 @@ class JournalRepository {
     return fromDoc(doc);
   }
 
+  /**
+   * Recent entries for analysis (mood <-> fitness). Equality-only query, so it needs no composite
+   * index; dates are filtered and sorted in memory by the caller.
+   */
+  async listForAnalysis(userId, { sharedOnly = false, limit = 500 } = {}) {
+    let query = this.collection.where('user_id', '==', userId);
+    if (sharedOnly) query = query.where('visibility', '==', 'shared');
+    const snap = await query.limit(limit).get();
+    return snap.docs.map(fromDoc);
+  }
+
   async listByUser(userId, filters) {
-    return this._list(this.collection.where('user_id', '==', userId), filters);
+    return this._list({ user_id: userId }, filters, 'journal_entries.listByUser');
   }
 
   /**
    * Entries a patient explicitly shared. Entries without `visibility` are private and never match.
    */
   async listSharedByUser(userId, filters) {
-    const base = this.collection.where('user_id', '==', userId).where('visibility', '==', 'shared');
-    return this._list(base, filters);
+    return this._list({ user_id: userId, visibility: 'shared' }, filters, 'journal_entries.listSharedByUser');
   }
 
-  async _list(baseQuery, { page = 1, limit = 20, startDate, endDate, severity } = {}) {
-    let query = baseQuery;
-
-    if (startDate) {
-      query = query.where('entry_date', '>=', startDate);
-    }
-    if (endDate) {
-      query = query.where('entry_date', '<=', endDate);
-    }
-    if (severity) {
-      query = query.where('safety_flags.severity_flag', '==', severity);
-    }
-
-    // Sort descending by created_at
-    query = query.orderBy('created_at', 'desc');
-
-    const offset = (page - 1) * limit;
-    const snapshot = await query.limit(limit + 1).offset(offset).get();
-
-    const entries = [];
-    const hasMore = snapshot.docs.length > limit;
-    const docs = hasMore ? snapshot.docs.slice(0, limit) : snapshot.docs;
-
-    docs.forEach((doc) => {
-      entries.push(fromDoc(doc));
+  async _list(equality, { page = 1, limit = 20, startDate, endDate, severity } = {}, label) {
+    const { items: entries, hasMore } = await pagedQuery({
+      collection: this.collection,
+      equality: { ...equality, 'safety_flags.severity_flag': severity },
+      ranges: [
+        { field: 'entry_date', op: '>=', value: startDate },
+        { field: 'entry_date', op: '<=', value: endDate }
+      ],
+      orderBy: { field: 'created_at', direction: 'desc' },
+      page,
+      limit,
+      label
     });
 
     return {

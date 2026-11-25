@@ -1,5 +1,6 @@
 const { db, Timestamp, COLLECTIONS } = require('../config/firebase/firestore');
 const { fromDoc } = require('../utils/docNormalizer');
+const { pagedQuery } = require('./indexedQuery');
 
 class SafetyRepository {
   constructor() {
@@ -33,22 +34,13 @@ class SafetyRepository {
   }
 
   async listAlertsForUser(userId, { status, severity, page = 1, limit = 20 }) {
-    let query = this.collection.where('user_id', '==', userId);
-
-    if (status) query = query.where('alert_status', '==', status);
-    if (severity) query = query.where('severity', '==', severity);
-
-    query = query.orderBy('triggered_at', 'desc');
-
-    const offset = (page - 1) * limit;
-    const snap = await query.limit(limit + 1).offset(offset).get();
-
-    const alerts = [];
-    const hasMore = snap.docs.length > limit;
-    const docs = hasMore ? snap.docs.slice(0, limit) : snap.docs;
-
-    docs.forEach((doc) => {
-      alerts.push(fromDoc(doc));
+    const { items: alerts, hasMore } = await pagedQuery({
+      collection: this.collection,
+      equality: { user_id: userId, alert_status: status || undefined, severity: severity || undefined },
+      orderBy: { field: 'triggered_at', direction: 'desc' },
+      page,
+      limit,
+      label: 'red_flag_alerts.listAlertsForUser'
     });
 
     return {
@@ -63,23 +55,18 @@ class SafetyRepository {
   }
 
   async listAlertsForTherapist(therapistId, { status, severity, patient_id, page = 1, limit = 20 }) {
-    let query = this.collection.where('therapist_id', '==', therapistId);
-
-    if (patient_id) query = query.where('user_id', '==', patient_id);
-    if (status) query = query.where('alert_status', '==', status);
-    if (severity) query = query.where('severity', '==', severity);
-
-    query = query.orderBy('triggered_at', 'desc');
-
-    const offset = (page - 1) * limit;
-    const snap = await query.limit(limit + 1).offset(offset).get();
-
-    const alerts = [];
-    const hasMore = snap.docs.length > limit;
-    const docs = hasMore ? snap.docs.slice(0, limit) : snap.docs;
-
-    docs.forEach((doc) => {
-      alerts.push(fromDoc(doc));
+    const { items: alerts, hasMore } = await pagedQuery({
+      collection: this.collection,
+      equality: {
+        therapist_id: therapistId,
+        user_id: patient_id || undefined,
+        alert_status: status || undefined,
+        severity: severity || undefined
+      },
+      orderBy: { field: 'triggered_at', direction: 'desc' },
+      page,
+      limit,
+      label: 'red_flag_alerts.listAlertsForTherapist'
     });
 
     return {

@@ -4,6 +4,7 @@ const memoryRepository = require('../repositories/memoryRepository');
 const safetyService = require('./safetyService');
 const modelService = require('./modelService');
 const accessPolicy = require('./accessPolicy');
+const fitnessRepository = require('../repositories/fitnessRepository');
 const { Timestamp } = require('../config/firebase/firestore');
 const logger = require('../utils/logger');
 
@@ -19,6 +20,23 @@ function scrubPII(text) {
     .replace(/\b\d{4}\s?\d{4}\s?\d{4}\b/g, '<AADHAAR_NUM>');
 }
 
+/** Today's (else yesterday's) synced fitness day as journal biometrics, or null. Never throws. */
+async function latestFitnessBiometrics(userId) {
+  try {
+    const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+    const rows = await fitnessRepository.listDays(userId, day(Date.now() - 86400000), day(Date.now()));
+    const latest = [...rows].reverse().find((d) => d.sleep_minutes || d.steps);
+    if (!latest) return null;
+    const bio = {};
+    if (latest.sleep_minutes) bio.sleep_hours = Math.round((latest.sleep_minutes / 60) * 10) / 10;
+    if (latest.steps) bio.steps = latest.steps;
+    return bio;
+  } catch (err) {
+    logger.warn('Could not attach fitness data to journal entry', { error: err.message });
+    return null;
+  }
+}
+
 const notFound = () => httpError(404, 'NOT_FOUND', 'Journal entry not found');
 const notOwner = () => httpError(403, 'FORBIDDEN', 'Access denied. You do not own this journal entry.');
 
@@ -27,23 +45,25 @@ class JournalService {
    * Creates an entry from user-authored input only. Masking, emotion/intent/safety analysis
    * and the CBT prompt are always computed here; the request schema rejects client-supplied values.
    */
-  async createEntry(userId, data) {
+  async createEntry(userId, data, { precomputedEmotions = null } = {}) {
     const maskedContent = scrubPII(data.content);
     const now = Timestamp.now();
 
-    const detectedEmotions = await modelService.analyzeEmotions(
-      maskedContent,
-      data.input_source || 'text',
-      data.vocal_prosody || null
-    );
+    // precomputedEmotions comes only from server-side voice analysis (createVoiceEntry), never from a request body
+    const detectedEmotions = precomputedEmotions
+      ? { ...precomputedEmotions }
+      : await modelService.analyzeEmotions(maskedContent, data.input_source || 'text', data.vocal_prosody || null);
     if (data.self_reported_emotion) {
       detectedEmotions.corrected_emotion = data.self_reported_emotion;
       detectedEmotions.correction_reason = 'self_reported_at_entry';
       detectedEmotions.user_correction_timestamp = now;
     }
 
+    // Wearable context for the safety check: what the client sent, else the latest synced Google Fit day
+    const biometrics = data.biometrics || (await latestFitnessBiometrics(userId));
+
     const intentObject = await modelService.analyzeIntent(maskedContent);
-    const safetyFlags = await modelService.analyzeSafety(maskedContent, detectedEmotions, data.biometrics || null);
+    const safetyFlags = await modelService.analyzeSafety(maskedContent, detectedEmotions, biometrics);
     const reflectionPrompt = await modelService.generateReflection(
       maskedContent,
       detectedEmotions.primary_state,
@@ -63,7 +83,7 @@ class JournalService {
       audio_transcript_confidence: data.audio_transcript_confidence,
       extracted_themes: data.extracted_themes,
       entry_date: data.entry_date,
-      biometrics: data.biometrics,
+      biometrics,
       visibility: data.visibility,
       detected_emotions: detectedEmotions,
       intent_object: intentObject,
@@ -105,6 +125,55 @@ class JournalService {
     }
 
     return { ...savedEntry, access: 'owner' };
+  }
+
+  /**
+   * Voice journal: the model service transcribes the recording and scores voice + text emotion.
+   * The transcript becomes the entry text (PII-scrubbed like typed text); the audio itself is
+   * never stored.
+   */
+  async createVoiceEntry(userId, audio, meta = {}) {
+    const result = await modelService.analyzeAudio(audio.buffer, audio.mimeType, audio.filename);
+    const transcript = (result.transcript || '').trim();
+    if (!/[A-Za-z]/.test(transcript)) {
+      throw httpError(422, 'NO_SPEECH_DETECTED', 'No speech was detected in the recording. Please try again closer to the microphone.');
+    }
+
+    const de = result.detected_emotions;
+    const precomputedEmotions = {
+      primary_state: de.primary_state,
+      confidence: de.confidence,
+      sentiment_score: de.sentiment_score,
+      all_28_states: de.all_28_states || {},
+      fine_grained_emotions: result.fine_grained_emotions || [],
+      vocal_prosody: null,
+      voice_analysis: {
+        decision: result.decision ?? de.fusion?.decision ?? null,
+        text_says: result.text_says ?? null,
+        voice_says: result.voice_says ?? null,
+        voice_raw: result.voice_raw ?? null,
+        voice_scores: result.voice_scores || null,
+        fused_scores: result.fused_scores || null,
+        seconds_analysed: typeof result.voice_seconds_analysed === 'number' ? result.voice_seconds_analysed : null
+      },
+      provenance: de.provenance || null
+    };
+
+    const entry = await this.createEntry(
+      userId,
+      {
+        content: transcript.slice(0, 10000),
+        entry_type: 'voice_journal',
+        input_source: 'audio',
+        audio_transcript_confidence: null,
+        visibility: meta.visibility,
+        extracted_themes: meta.extracted_themes,
+        self_reported_emotion: meta.self_reported_emotion,
+        reflection_response: meta.reflection_response
+      },
+      { precomputedEmotions }
+    );
+    return entry;
   }
 
   async dispatchHighSeverityAlerts(userId, entryId) {

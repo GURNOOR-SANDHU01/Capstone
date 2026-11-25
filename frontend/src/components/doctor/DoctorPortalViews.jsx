@@ -24,6 +24,7 @@ import {
 import { describeError } from '../../services/apiClient';
 import { useAppointments } from '../../hooks/useAppointments';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { useSelectedPatient } from '../../hooks/useSelectedPatient';
 import { AppointmentCard } from '../appointments/AppointmentCard';
 import { DoctorScheduleDrawer } from '../appointments/DoctorScheduleDrawer';
 import { CareInstructionDrawer } from './CareInstructionDrawer';
@@ -33,6 +34,7 @@ import { meetingProviderLabel } from '../../services/appointmentService';
 import { PageHeader, Button, Card, Badge, Modal, EmptyState, LoadState } from '../ui';
 import { PageTransition } from '../animations';
 import SentimentBar from '../SentimentBar';
+import EmotionBreakdown from '../journal/EmotionBreakdown';
 
 const notify = (onNotification, title, message) => onNotification && onNotification(title, message);
 
@@ -317,7 +319,7 @@ export function DoctorConsultationsView() {
 }
 
 /** Patient picker shared by the doctor views below. */
-function PatientPicker({ roster, value, onChange }) {
+export function PatientPicker({ roster, value, onChange }) {
   const patients = roster.data || [];
   if (roster.loading || roster.error) return <LoadState loading={roster.loading} error={roster.error} onRetry={roster.reload} label="Loading patients..." />;
   if (patients.length === 0) {
@@ -336,12 +338,6 @@ function PatientPicker({ roster, value, onChange }) {
       ))}
     </select>
   );
-}
-
-/** Selected patient id, defaulting to the first patient in the roster. */
-function useSelectedPatient(roster) {
-  const [patientId, setPatientId] = useState("");
-  return [patientId || roster.data?.[0]?.id || "", setPatientId];
 }
 
 // Doctor Shared Journal Review Sub-view
@@ -402,6 +398,26 @@ export function DoctorSharedJournalsView() {
                 <p style={{ fontSize: 12, color: "var(--color-text-muted)", fontStyle: "italic" }}>Journal text is not included in summary access.</p>
               ) : (
                 <p style={{ fontSize: 13, lineHeight: 1.5 }}>{e.text}</p>
+              )}
+              {e.detectedEmotion && (
+                <div style={{ background: "var(--color-bg)", padding: 8, borderRadius: 6, fontSize: 11, display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                    <strong>AI detected: {e.detectedEmotion.charAt(0).toUpperCase() + e.detectedEmotion.slice(1)}</strong>
+                    {typeof e.emotionConfidence === "number" && (
+                      <span style={{ color: "var(--color-text-muted)" }}>({Math.round(e.emotionConfidence * 100)}%)</span>
+                    )}
+                    {e.inputSource === "audio" && <span className="badge badge-muted" style={{ fontSize: 10 }}>Voice entry</span>}
+                    {e.isMockAnalysis && <span className="badge badge-muted" style={{ fontSize: 10 }}>Built-in rules</span>}
+                  </div>
+                  {e.access !== "summary" && (
+                    <EmotionBreakdown
+                      fineGrained={e.fineGrained}
+                      voiceScores={e.voiceAnalysis?.voiceScores}
+                      fusedScores={e.voiceAnalysis?.fusedScores}
+                      ekmanScores={e.ekmanScores}
+                    />
+                  )}
+                </div>
               )}
               <SentimentBar value={e.sentiment} label="Sentiment Score" />
               {e.reflection && (

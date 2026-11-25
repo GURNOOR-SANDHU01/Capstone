@@ -29,7 +29,11 @@ const FRIENDLY_MESSAGES = {
   TOKEN_REVOKED: "Your access changed. Please sign in again.",
   RATE_LIMIT_EXCEEDED: "Too many requests. Please wait a moment and try again.",
   SERVICE_NOT_READY: "This feature is temporarily unavailable while the database finishes setting up. Please try again later.",
-  INTERNAL_ERROR: "Something went wrong on the server. Please try again."
+  INTERNAL_ERROR: "Something went wrong on the server. Please try again.",
+  VOICE_ANALYSIS_UNAVAILABLE: "Voice analysis is offline right now. Please type your entry or try again later.",
+  NO_SPEECH_DETECTED: "We couldn't hear any words in that recording. Please try again a little closer to the microphone.",
+  AUDIO_NOT_ANALYSABLE: "That recording couldn't be processed. Please record it again.",
+  PAYLOAD_TOO_LARGE: "The recording is too long. Please keep voice entries under two minutes."
 };
 
 export function describeError(err) {
@@ -43,7 +47,7 @@ async function getIdToken(forceRefresh = false) {
   return user.getIdToken(forceRefresh);
 }
 
-async function send(method, path, { body, query, timeoutMs = DEFAULT_TIMEOUT_MS, retryOnAuth = true } = {}) {
+async function send(method, path, { body, rawBody, contentType, query, timeoutMs = DEFAULT_TIMEOUT_MS, retryOnAuth = true } = {}) {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin);
   if (query) {
     Object.entries(query).forEach(([k, v]) => {
@@ -54,7 +58,8 @@ async function send(method, path, { body, query, timeoutMs = DEFAULT_TIMEOUT_MS,
   const headers = { Accept: "application/json" };
   const token = await getIdToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (rawBody !== undefined) headers["Content-Type"] = contentType || rawBody.type || "application/octet-stream";
+  else if (body !== undefined) headers["Content-Type"] = "application/json";
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -64,7 +69,7 @@ async function send(method, path, { body, query, timeoutMs = DEFAULT_TIMEOUT_MS,
     response = await fetch(url.toString(), {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: rawBody !== undefined ? rawBody : body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal
     });
   } catch (err) {
@@ -88,7 +93,7 @@ async function send(method, path, { body, query, timeoutMs = DEFAULT_TIMEOUT_MS,
     // An expired token is refreshed once transparently
     if (response.status === 401 && retryOnAuth && code === "TOKEN_EXPIRED" && auth?.currentUser) {
       await getIdToken(true);
-      return send(method, path, { body, query, timeoutMs, retryOnAuth: false });
+      return send(method, path, { body, rawBody, contentType, query, timeoutMs, retryOnAuth: false });
     }
     throw new ApiError(payload?.error?.message || `Request failed (${response.status})`, {
       status: response.status,
@@ -105,5 +110,7 @@ export const api = {
   post: (path, body, opts) => send("POST", path, { ...opts, body }),
   put: (path, body, opts) => send("PUT", path, { ...opts, body }),
   patch: (path, body, opts) => send("PATCH", path, { ...opts, body }),
-  delete: (path, body, opts) => send("DELETE", path, { ...opts, body })
+  delete: (path, body, opts) => send("DELETE", path, { ...opts, body }),
+  /** Binary upload (e.g. a voice recording Blob); metadata goes in opts.query */
+  upload: (path, blob, opts) => send("POST", path, { ...opts, rawBody: blob })
 };

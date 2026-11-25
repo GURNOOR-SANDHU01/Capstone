@@ -19,5 +19,10 @@ router.post('/emotions', validate(analyzeEmotionsSchema, 'body'), analysisContro
 router.post('/intent', validate(analyzeIntentSchema, 'body'), analysisController.analyzeIntent);
 router.post('/safety', validate(analyzeSafetySchema, 'body'), analysisController.analyzeSafety);
 router.post('/reflection', validate(analyzeReflectionSchema, 'body'), analysisController.analyzeReflection);
+router.post(
+  '/audio',
+  express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '15mb' }),
+  analysisController.analyzeAudio
+);
 
 module.exports = router;

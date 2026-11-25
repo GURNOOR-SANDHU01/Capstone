@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   listJournalEntries,
   addJournalEntry,
+  addVoiceJournalEntry,
   removeJournalEntry,
   setJournalEntryVisibility,
   editJournalEntry
@@ -47,6 +48,12 @@ export function useJournal(currentUser) {
     return created;
   }, []);
 
+  const addVoiceEntry = useCallback(async (data) => {
+    const created = await addVoiceJournalEntry(data);
+    setEntries((prev) => [created, ...prev.filter((e) => e.id !== created.id)]);
+    return created;
+  }, []);
+
   const removeEntry = useCallback(async (id) => {
     await removeJournalEntry(id);
     setEntries((prev) => prev.filter((e) => e.id !== id));
@@ -64,5 +71,5 @@ export function useJournal(currentUser) {
     return updated;
   }, []);
 
-  return { entries, loading, error, reload, addEntry, removeEntry, setVisibility, editEntry };
+  return { entries, loading, error, reload, addEntry, addVoiceEntry, removeEntry, setVisibility, editEntry };
 }

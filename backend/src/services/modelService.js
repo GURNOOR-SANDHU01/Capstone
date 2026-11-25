@@ -2,6 +2,14 @@ const axios = require('axios');
 const config = require('../config/env');
 const logger = require('../utils/logger');
 
+function voiceUnavailable(message) {
+  const err = new Error(message);
+  err.status = 503;
+  err.code = 'VOICE_ANALYSIS_UNAVAILABLE';
+  err.expose = true;
+  return err;
+}
+
 // 28 GoEmotions states according to Sentience architecture
 const GO_EMOTIONS_28 = [
   'admiration', 'amusement', 'anger', 'annoyance', 'approval', 'caring', 'confusion',
@@ -181,6 +189,11 @@ class MockModelAdapter {
     };
   }
 
+  async analyzeAudio() {
+    // Speech-to-text and voice emotion need the real model service; there is no rule-based stand-in
+    throw voiceUnavailable('No model service is configured (set MODEL_API_BASE_URL and USE_MOCK_MODELS=false).');
+  }
+
   async extractMemories(content, primaryEmotion = 'neutral') {
     const themes = [];
     const lower = content.toLowerCase();
@@ -265,6 +278,17 @@ class HttpModelAdapter {
     });
     return res.data;
   }
+
+  /** Sends a recording as multipart/form-data; returns { transcript, detected_emotions, ... }. */
+  async analyzeAudio(buffer, mimeType = 'application/octet-stream', filename = 'recording.webm') {
+    const form = new FormData();
+    form.append('file', new Blob([buffer], { type: mimeType }), filename);
+    const res = await this.client.post('/api/analysis/audio', form, {
+      timeout: config.modelApi.audioTimeoutMs,
+      headers: { 'Content-Type': undefined } // let axios set the multipart boundary
+    });
+    return res.data;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -298,7 +322,20 @@ const RESULT_SCHEMAS = {
     })
     .passthrough(),
   generateReflection: z.object({ prompt_text: z.string().min(1), prompt_type: z.string().optional() }).passthrough(),
-  extractMemories: z.array(z.object({ text: z.string().min(1), type: z.string().min(1), score: unitScore }).passthrough())
+  extractMemories: z.array(z.object({ text: z.string().min(1), type: z.string().min(1), score: unitScore }).passthrough()),
+  analyzeAudio: z
+    .object({
+      transcript: z.string(),
+      detected_emotions: z
+        .object({
+          primary_state: z.string().min(1),
+          confidence: unitScore,
+          sentiment_score: z.number().min(-1).max(1),
+          all_28_states: z.record(z.string(), z.number()).optional()
+        })
+        .passthrough()
+    })
+    .passthrough()
 };
 
 const SEVERITY_RANK = { normal: 0, moderate: 1, high: 2 };
@@ -381,6 +418,37 @@ class ModelService {
 
   async extractMemories(content, primaryEmotion) {
     return this._call('extractMemories', [content, primaryEmotion]);
+  }
+
+  /**
+   * Voice journal analysis (Whisper transcript + WavLM voice emotion, fused with the text model
+   * when the service has it). Unlike the text calls there is no fallback: without the model
+   * service a recording cannot be transcribed, so this throws a 503 VOICE_ANALYSIS_UNAVAILABLE.
+   */
+  async analyzeAudio(buffer, mimeType, filename) {
+    if (this.usingFallbackOnly) return this.fallback.analyzeAudio();
+    let result;
+    try {
+      result = unwrap(await this.adapter.analyzeAudio(buffer, mimeType, filename));
+    } catch (err) {
+      const status = err.response?.status;
+      const detail = err.response?.data?.detail;
+      logger.error('Voice analysis failed', { status, error: err.message });
+      if (status === 400 || status === 413 || status === 422) {
+        const clientErr = new Error(typeof detail === 'string' ? detail : 'The recording could not be analysed.');
+        clientErr.status = 422;
+        clientErr.code = 'AUDIO_NOT_ANALYSABLE';
+        clientErr.expose = true;
+        throw clientErr;
+      }
+      throw voiceUnavailable('The voice analysis service is unavailable. Please try again or type your entry.');
+    }
+    const parsed = RESULT_SCHEMAS.analyzeAudio.safeParse(result);
+    if (!parsed.success) {
+      logger.error('Model service returned an invalid audio result', { issue: parsed.error.errors[0]?.message });
+      throw voiceUnavailable('The voice analysis service returned an unexpected result.');
+    }
+    return parsed.data;
   }
 }
 

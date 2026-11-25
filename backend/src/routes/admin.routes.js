@@ -5,6 +5,8 @@ const authenticate = require('../middleware/authenticate');
 const validate = require('../middleware/validate');
 const { requireRole } = require('../middleware/authorize');
 const { ROLES, ALL_ROLES } = require('../config/roles');
+const adminService = require('../services/adminService');
+const { success } = require('../utils/apiResponse');
 
 const router = express.Router();
 
@@ -26,6 +28,17 @@ const auditQuery = z.object({ limit: z.coerce.number().int().positive().max(500)
 
 router.get('/users', validate(listUsersQuery, 'query'), adminController.listUsers);
 router.post('/users/:uid/role', validate(setRoleBody), adminController.setRole);
+router.post(
+  '/users/:uid/status',
+  validate(z.object({ active: z.boolean() }).strict()),
+  async (req, res, next) => {
+    try {
+      return success(res, await adminService.setAccountStatus(req.user, req.params.uid, req.body.active));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 router.patch('/doctors/:uid', validate(doctorProfileBody), adminController.updateDoctorProfile);
 const addDoctorBody = z
   .object({

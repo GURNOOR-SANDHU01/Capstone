@@ -22,6 +22,7 @@ const patientRoutes = require('./routes/patients.routes');
 const doctorRoutes = require('./routes/doctors.routes');
 const adminRoutes = require('./routes/admin.routes');
 const careRoutes = require('./routes/care.routes');
+const googleFitRoutes = require('./routes/googleFit.routes');
 
 const app = express();
 
@@ -62,7 +63,21 @@ app.use(express.static(path.resolve(__dirname, '../public')));
 
 // Request logging (PII safe)
 app.use((req, res, next) => {
-  logger.info(`--> ${req.method} ${req.originalUrl}`);
+  // Path only: query strings can carry user text (e.g. voice-entry reflections) or OAuth codes
+  logger.info(`--> ${req.method} ${req.originalUrl.split("?")[0]}`);
+  next();
+});
+
+// API responses are JSON only: forbid everything, including being framed or running scripts
+app.use(
+  '/api',
+  helmet.contentSecurityPolicy({
+    useDefaults: false,
+    directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'none'"] }
+  })
+);
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store'); // health data must not sit in shared/browser caches
   next();
 });
 
@@ -82,11 +97,12 @@ app.use('/api/biometrics', biometricRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/google-fit', googleFitRoutes);
 app.use('/api', careRoutes);
 
 // Catch-all for undefined API routes
 app.all('/api/*', (req, res) => {
-  return error(res, 'ENDPOINT_NOT_FOUND', `Route ${req.method} ${req.originalUrl} not found`, 404);
+  return error(res, 'ENDPOINT_NOT_FOUND', `Route ${req.method} ${req.originalUrl.split("?")[0]} not found`, 404);
 });
 
 // Global error handler

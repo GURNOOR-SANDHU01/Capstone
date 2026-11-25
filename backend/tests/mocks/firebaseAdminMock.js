@@ -400,6 +400,16 @@ const mockAuth = {
     this.revokedUids.add(uid);
   },
 
+  async updateUser(uid, props) {
+    if (!this.accounts[uid]) {
+      const err = new Error('There is no user record corresponding to the provided identifier.');
+      err.code = 'auth/user-not-found';
+      throw err;
+    }
+    if (typeof props.disabled === 'boolean') this.accounts[uid].disabled = props.disabled;
+    return JSON.parse(JSON.stringify(this.accounts[uid]));
+  },
+
   async createCustomToken(uid) {
     return `custom_${uid}`;
   }

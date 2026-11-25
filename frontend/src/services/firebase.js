@@ -403,6 +403,15 @@ export const loginWithGoogle = async (role = "patient") => {
 export const logoutUser = async () => {
   clearDrafts(); // unsaved journal/companion text must not be visible to the next user
   if (isRealFirebaseConfigured && auth) {
+    // Invalidate the session server-side first (revokes refresh tokens; existing ID tokens are
+    // rejected by the API). Best effort: sign-out still happens if the server is unreachable.
+    if (auth.currentUser) {
+      try {
+        await api.post("/users/me/logout", undefined, { timeoutMs: 5000, retryOnAuth: false });
+      } catch (err) {
+        console.warn("Server-side session revocation failed; signing out locally.", err?.code || err);
+      }
+    }
     await signOut(auth);
   }
   currentUserInstance = null;

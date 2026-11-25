@@ -120,3 +120,28 @@ export const findWeekdayPattern = (entries = []) => {
   const lowest = days.sort((a, b) => a.average - b.average)[0];
   return lowest.average < overall - 5 ? { ...lowest, overall } : null;
 };
+
+/**
+ * Emotion Scoreboard: how often each fine-grained emotion (27 GoEmotions labels from the text
+ * model) was detected across the user's entries, and how strongly on average.
+ * Only real model output counts (entries analysed by the built-in rules have no fine-grained data).
+ */
+export function buildEmotionScoreboard(entries = [], limit = 12) {
+  const byLabel = {};
+  let analysed = 0;
+  for (const e of entries) {
+    const fine = Array.isArray(e.fineGrained) ? e.fineGrained : [];
+    if (!fine.length) continue;
+    analysed += 1;
+    for (const { label, score } of fine) {
+      if (!byLabel[label]) byLabel[label] = { label, count: 0, total: 0 };
+      byLabel[label].count += 1;
+      byLabel[label].total += score;
+    }
+  }
+  const rows = Object.values(byLabel)
+    .map((r) => ({ label: r.label, count: r.count, avgScore: r.total / r.count }))
+    .sort((a, b) => b.count - a.count || b.avgScore - a.avgScore)
+    .slice(0, limit);
+  return { analysedEntries: analysed, rows };
+}

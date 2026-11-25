@@ -114,6 +114,25 @@ const correctEmotionSchema = z.object({
   correction_reason: z.string().max(500).optional()
 });
 
+/**
+ * Voice entry: the request body is the raw recording (audio/* content type); these
+ * user-authored fields travel as query parameters. Text and emotions come from the model.
+ */
+const createVoiceEntryQuerySchema = z
+  .object({
+    visibility: visibilitySchema.default('private'),
+    self_reported_emotion: z.string().trim().min(1).max(50).optional(),
+    reflection_response: z.string().trim().min(1).max(2000).optional(),
+    // comma-separated, e.g. "work,sleep"
+    tags: z
+      .string()
+      .max(1100)
+      .optional()
+      .transform((s) => (s ? s.split(',').map((t) => t.trim()).filter(Boolean) : undefined))
+      .pipe(themesSchema.optional())
+  })
+  .strict();
+
 const queryJournalEntriesSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
@@ -124,6 +143,7 @@ const queryJournalEntriesSchema = z.object({
 
 module.exports = {
   createJournalEntrySchema,
+  createVoiceEntryQuerySchema,
   updateJournalEntrySchema,
   correctEmotionSchema,
   queryJournalEntriesSchema,

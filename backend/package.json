@@ -13,7 +13,8 @@
     "db:reconcile": "node scripts/reconcile-data.js",
     "auth:set-role": "node scripts/set-role.js",
     "auth:demo-accounts": "node scripts/create-demo-accounts.js",
-    "smoke:live": "node scripts/live-smoke-test.js"
+    "smoke:live": "node scripts/live-smoke-test.js",
+    "db:reanalyze": "node scripts/reanalyze-entries.js"
   },
   "keywords": [
     "sentience",
@@ -50,6 +51,9 @@
     "collectCoverageFrom": [
       "src/**/*.js",
       "!src/server.js"
+    ],
+    "setupFiles": [
+      "<rootDir>/tests/setupEnv.js"
     ]
   }
 }

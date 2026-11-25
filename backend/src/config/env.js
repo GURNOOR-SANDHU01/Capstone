@@ -29,7 +29,21 @@ const config = {
     baseUrl: process.env.MODEL_API_BASE_URL || '',
     apiKey: process.env.MODEL_API_KEY || '',
     timeoutMs: parseInt(process.env.MODEL_API_TIMEOUT_MS || '15000', 10),
+    // Voice analysis runs Whisper + WavLM (+ text model); first calls on CPU can take a while
+    audioTimeoutMs: parseInt(process.env.MODEL_API_AUDIO_TIMEOUT_MS || '120000', 10),
     useMock: process.env.USE_MOCK_MODELS === 'true' || !process.env.MODEL_API_BASE_URL
+  },
+  security: {
+    // 32 random bytes, base64. Encrypts OAuth refresh tokens at rest (AES-256-GCM).
+    tokenEncryptionKey: process.env.TOKEN_ENCRYPTION_KEY || ''
+  },
+  // Where the browser is sent back after the Google OAuth callback
+  frontendUrl: (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, ''),
+  googleFit: {
+    clientId: process.env.GOOGLE_FIT_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_FIT_CLIENT_SECRET || '',
+    // Must exactly match an "Authorized redirect URI" of the OAuth client in Google Cloud
+    redirectUri: process.env.GOOGLE_FIT_REDIRECT_URI || 'http://localhost:5000/api/google-fit/oauth/callback'
   },
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 mins

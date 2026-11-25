@@ -28,6 +28,40 @@ at runtime; the Express backend can call such a service through `MODEL_API_BASE_
 
 ## Running locally
 
+**One command** (after the one-time setup below): opens a window each for the AI model service
+(:8000), the backend (:5000) and the frontend (:5173), waits until each is healthy, and reports
+which AI models are live. Services that are already running are left alone.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-all.ps1     # Windows; then open http://localhost:5173
+```
+```bash
+./start-all.sh                                               # macOS / Linux; logs in ./logs, Ctrl+C stops
+```
+
+**macOS:** port 5000 belongs to AirPlay Receiver, so set `PORT=5001` in `backend/.env` and
+`VITE_DEV_API_PROXY_TARGET=http://localhost:5001` in `frontend/.env.local` (or turn AirPlay Receiver off).
+The model service venv on macOS is `model_service/.venv-mac` (Python 3.12).
+
+AI features end to end: text emotion (27 fine-grained + 6 core), voice journal (Whisper + WavLM over
+the whole recording, fused with the words), and a local LLM for intent, CBT reflection prompts and
+memories. They appear in Journal, Mood & Insights (Emotion Scoreboard), AI Companion, the doctor's
+Shared Journals, and the admin dashboard's AI Model Service card.
+
+One-time setup for the AI models (GPU recommended; see `model_service/README.md`):
+
+```powershell
+cd model_service
+python -m venv .venv
+.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
+.venv\Scripts\pip install -r requirements.txt     # also needs ffmpeg on PATH
+```
+
+The model weights (`Sentic Med AI_ML/`) are not in git; get them from the ML team's Drive.
+`backend/.env` needs `USE_MOCK_MODELS=false` and `MODEL_API_BASE_URL=http://localhost:8000`,
+and, for Google Fit, `GOOGLE_FIT_CLIENT_ID/SECRET` + `TOKEN_ENCRYPTION_KEY`
+(see `backend/docs/GOOGLE_FIT_AND_SECURITY.md`).
+
 ### 1. Backend
 ```bash
 cd backend
@@ -81,6 +115,7 @@ Details: `backend/docs/security-remediation-plan.md`, `backend/SCHEMA.md`,
 | `npm run db:reconcile` | Repairs malformed legacy fields (plan R3) | only with `--apply --backup <file>` |
 | `npm run auth:set-role -- --uid <uid> --role admin` | Bootstrap the first admin | only with `--apply` |
 | `npm run auth:demo-accounts` | Auth accounts for existing demo personas (plan R2) | only with `--apply` |
+| `npm run db:reanalyze` | Re-scores entries analysed by the built-in rules with the real models (never touches safety flags, voice entries or user corrections) | only with `--apply --backup <file>` |
 
 | `npm run smoke:live -- --apply` | Live check with a temporary account (real ID token, journal CRUD), always cleaned up | temporary data only |
 

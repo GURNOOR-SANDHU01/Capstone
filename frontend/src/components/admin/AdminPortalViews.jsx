@@ -27,8 +27,46 @@ import {
 } from '../../services/clinicalApi';
 import { isRealFirebaseConfigured } from '../../services/firebase';
 import { describeError } from '../../services/apiClient';
+import { getModelStatus } from '../../services/journalService';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { LoadState, EmptyState } from '../ui';
+
+/** Which AI models the backend is using right now (model service on :8000 or built-in rules). */
+function ModelServiceCard() {
+  const state = useAsyncData(getModelStatus, [], null);
+  const s = state.data;
+  const pill = (ok, label) => (
+    <span key={label} className={`badge ${ok ? "badge-primary" : "badge-muted"}`} style={{ fontSize: 11 }}>
+      {ok ? "●" : "○"} {label}
+    </span>
+  );
+  let summary = "Checking…";
+  if (s?.mode === "sandbox") summary = "Sandbox mode: demo analysis only.";
+  else if (s?.mode === "builtin") summary = "Backend uses built-in rules (USE_MOCK_MODELS=true or no MODEL_API_BASE_URL).";
+  else if (s?.mode === "offline") summary = "Model service unreachable: text uses built-in rules, voice journals are unavailable.";
+  else if (s?.mode === "live") summary = `Model service live on ${String(s.device || "cpu").toUpperCase()}.`;
+  return (
+    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+          <Activity size={16} /> AI Model Service
+        </h3>
+        <button type="button" className="btn btn-outline btn-sm" onClick={state.reload} disabled={state.loading}>
+          {state.loading ? "Checking…" : "Re-check"}
+        </button>
+      </div>
+      <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>{summary}</p>
+      {s?.mode === "live" && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {pill(s.voiceModel, "Voice emotion (WavLM-large)")}
+          {pill(s.whisper, "Speech-to-text (Whisper)")}
+          {pill(s.text, `Text emotion (${s.textModel || "not installed"})`)}
+          {pill(s.llm, `Intent, CBT prompts & memories (${s.llmModel ? s.llmModel.split("/").pop() : "built-in rules"})`)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Admin Dashboard View
 export function AdminDashboardView({ onNavigate }) {
@@ -70,6 +108,8 @@ export function AdminDashboardView({ onNavigate }) {
           <span>Add New Doctor</span>
         </button>
       </div>
+
+      <ModelServiceCard />
 
       {/* Metrics Row */}
       <div className="app-grid-3">

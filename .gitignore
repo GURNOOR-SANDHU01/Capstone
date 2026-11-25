@@ -8,3 +8,13 @@ personal/*
 
 .env
 AGENTS.md
+
+# Model weights (too large for git; share via Drive / HF Hub / Git LFS)
+*.pt
+*.pth
+*.bin
+*.safetensors
+model_service/tmp/
+# macOS model-service venv and start-all.sh logs
+model_service/.venv-mac/
+logs/

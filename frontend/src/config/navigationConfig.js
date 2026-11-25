@@ -15,12 +15,15 @@ import {
   MessageSquare,
   Building2,
   FileText,
-  Users
+  Users,
+  Activity,
+  UserCog
 } from 'lucide-react';
 import { ROLES } from '../constants/roles';
 
 export const patientNavigation = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+  { id: "google-fit", label: "Google Fit", icon: Activity },
   { id: "companion", label: "AI Companion", icon: Bot },
   { id: "doctor-consultations", label: "Doctor Consultations", icon: Video },
   { id: "journal", label: "Journal & Diary", icon: BookOpen },
@@ -37,6 +40,7 @@ export const doctorNavigation = [
   { id: "doctor-dashboard", label: "Clinical Dashboard", icon: BarChart3 },
   { id: "doctor-safety", label: "Doctor Safety Center", icon: ShieldAlert },
   { id: "doctor-patients", label: "Patient Roster", icon: Users },
+  { id: "doctor-wellness", label: "Patient Wellness", icon: Activity },
   { id: "doctor-shared-journals", label: "Shared Journals", icon: BookOpen },
   { id: "doctor-consultations", label: "Doctor Consultations", icon: Video },
   { id: "doctor-appointments", label: "Appointments", icon: Calendar },
@@ -47,6 +51,7 @@ export const doctorNavigation = [
 
 export const adminNavigation = [
   { id: "admin-dashboard", label: "Admin Dashboard", icon: BarChart3 },
+  { id: "admin-users", label: "Users & Roles", icon: UserCog },
   { id: "admin-safety", label: "Admin Safety Center", icon: ShieldCheck },
   { id: "admin-doctors", label: "Doctor Management", icon: Stethoscope },
   { id: "admin-clinics", label: "Clinic Network", icon: Building2 },
