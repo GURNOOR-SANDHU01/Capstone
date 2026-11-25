@@ -35,18 +35,72 @@ CBT_TECHNIQUES = [
 MEMORY_TYPES = ["trigger", "coping_pattern", "relationship", "goal", "preference", "life_event", "health"]
 
 SYSTEM_PROMPT = f"""You analyse private wellbeing journal entries for a CBT-informed reflection app.
-You are not a therapist and never diagnose. Reply with ONE JSON object and nothing else:
-{{
-  "intent": one of {INTENTS},
-  "clarified_to": "a short snake_case description of what the writer is really dealing with",
-  "triggers": ["up to 3 short snake_case triggers named in the text"],
-  "coping_attempts": ["up to 3 short snake_case things the writer did to cope, only if mentioned"],
-  "reflection_prompt": "ONE warm, open, non-judgemental question (max 30 words) that helps the writer explore this entry, in second person",
-  "cbt_technique": one of {CBT_TECHNIQUES},
-  "memories": [{{"text": "one short third-person fact about the user worth remembering, e.g. 'Exams are a recurring source of anxiety.'", "type": one of {MEMORY_TYPES}, "score": importance 0.0-1.0}}]
-}}
-Rules: use only what the entry says; empty lists are fine; at most 2 memories, none for trivial entries;
-never include names, places, phone numbers or emails in memories; placeholders like <EMAIL> stay as they are."""
+You are not a therapist and never diagnose. Reply with ONE JSON object and nothing else, with keys:
+- "intent": the main topic, one of {INTENTS}.
+  Work, job, manager, deadlines -> work_stress. Exams, study, grades -> academic_anxiety.
+  Arguments with friends/partner/roommate -> interpersonal_conflict. A death -> grief_loss.
+  A clearly good day -> positive_experience. Use general_reflection only if nothing else fits.
+- "clarified_to": short snake_case summary of what the writer is dealing with.
+- "triggers": up to 3 snake_case CAUSES of difficult feelings named in the text (not feelings, not good things). [] if none.
+- "coping_attempts": up to 3 snake_case things the writer DID to feel better (e.g. exercise, talking_to_friend, breathing). [] if none.
+- "reflection_prompt": ONE warm, open, non-judgemental question (max 30 words), second person, about this entry.
+- "cbt_technique": one of {CBT_TECHNIQUES}. Good day -> strength_amplification; loss or self-criticism ->
+  self_compassion; overload -> problem_solving; harsh or catastrophic thoughts -> cognitive_reappraisal;
+  low energy or withdrawal -> behavioral_activation; panic or racing thoughts -> grounding.
+- "memories": 0-2 lasting PATTERNS about the writer, third person starting with "The user", factual, never advice
+  or judgement, each {{"text", "type": one of {MEMORY_TYPES}, "score": 0.0-1.0 importance}}. [] for trivial entries.
+Use only what the entry says. Never put names, places, phone numbers or emails in memories."""
+
+FEW_SHOT_USER = 'Journal entry:\n"""\nI have my chemistry final on Friday and I keep thinking I will fail. Called my sister and did some breathing which helped a bit.\n"""\n(The emotion model detected: nervousness.)'
+FEW_SHOT_ASSISTANT = json.dumps({
+    "intent": "academic_anxiety", "clarified_to": "fear_of_failing_upcoming_exam",
+    "triggers": ["upcoming_final_exam"], "coping_attempts": ["talking_to_family", "breathing"],
+    "reflection_prompt": "When the thought 'I will fail' shows up, what evidence do you have for and against it?",
+    "cbt_technique": "cognitive_reappraisal",
+    "memories": [{"text": "The user feels strong anxiety before exams.", "type": "trigger", "score": 0.8},
+                 {"text": "The user finds talking to family and breathing exercises helpful.", "type": "coping_pattern", "score": 0.7}],
+})
+
+
+# Small LLMs are good at writing but weak at picking a category. When the LLM falls back to
+# "general_reflection", clear keyword cues decide the topic instead; the topic then fixes a
+# consistent CBT technique. The question, triggers, coping and memories stay the LLM's.
+INTENT_CUES = [
+    ("work_stress", r"\b(work|job|boss|manager|deadlines?|office|shift|colleague|coworker|client)\b"),
+    ("academic_anxiety", r"\b(exams?|study|studying|test|grades?|assignment|semester|class|college|university)\b"),
+    ("grief_loss", r"\b(passed away|passed|died|death|funeral|grief|miss (him|her|them))\b"),
+    ("interpersonal_conflict", r"\b(argued|argument|fight|fought|snapped at|conflict|yelled)\b"),
+    ("family_concerns", r"\b(mom|mum|dad|parents?|family|brother|sister)\b"),
+    ("loneliness", r"\b(lonely|alone|isolated|no one|nobody)\b"),
+    ("sleep_issues", r"\b(insomnia|can'?t sleep|couldn'?t sleep|no sleep|sleepless)\b"),
+    ("health_worry", r"\b(sick|ill|pain|doctor|hospital|symptoms?)\b"),
+    ("financial_stress", r"\b(money|rent|bills?|debt|loan|salary)\b"),
+]
+TECHNIQUE_FOR_INTENT = {
+    "positive_experience": "strength_amplification",
+    "grief_loss": "self_compassion",
+    "self_esteem": "self_compassion",
+    "work_stress": "problem_solving",
+    "financial_stress": "problem_solving",
+    "academic_anxiety": "cognitive_reappraisal",
+    "interpersonal_conflict": "cognitive_reappraisal",
+    "loneliness": "behavioral_activation",
+    "sleep_issues": "grounding",
+    "health_worry": "grounding",
+}
+
+
+def refine(result: dict, content: str) -> dict:
+    lowered = content.lower()
+    if result["intent"] == "general_reflection":
+        for intent, pattern in INTENT_CUES:
+            if re.search(pattern, lowered):
+                result = {**result, "intent": intent}
+                break
+    technique = TECHNIQUE_FOR_INTENT.get(result["intent"])
+    if technique:
+        result = {**result, "cbt_technique": technique}
+    return result
 
 
 class LLMUnavailable(Exception):
@@ -116,6 +170,13 @@ def validate(raw: dict) -> dict:
             score = float(m.get("score", 0.5))
         except (TypeError, ValueError):
             score = 0.5
+        # memories are third-person facts; drop first-person text, advice and judgements
+        lowered = text.lower()
+        if re.match(r"^(i|i'm|i am|my|you|your)\b", lowered) or re.search(r"\b(should|unproductive|need to)\b", lowered):
+            continue
+        # never store anything about masked personal data (placeholders like <EMAIL>, contact details)
+        if "<" in text or re.search(r"\b(e-?mail|phone|number|address|aadhaar|ssn)\b", lowered):
+            continue
         if 8 <= len(text) <= 240 and mtype in MEMORY_TYPES:
             memories.append({"text": text, "type": mtype, "score": round(min(1.0, max(0.0, score)), 2)})
     return {
@@ -147,7 +208,12 @@ class LocalLLM:
         log.info("Local LLM loaded: %s on %s (%s)", model_id, device, dtype)
 
     def _generate(self, user_text: str) -> str:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_text}]
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": FEW_SHOT_USER},
+            {"role": "assistant", "content": FEW_SHOT_ASSISTANT},
+            {"role": "user", "content": user_text},
+        ]
         prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         with torch.no_grad():
@@ -172,7 +238,7 @@ class LocalLLM:
             for attempt in range(2):  # one retry with a nudge if the first answer is unusable
                 text = self._generate(user if attempt == 0 else user + "\nReturn only valid JSON.")
                 try:
-                    result = validate(_first_json_object(text))
+                    result = refine(validate(_first_json_object(text)), content)
                     break
                 except (ValueError, json.JSONDecodeError) as e:
                     last_err = e
